@@ -1,0 +1,503 @@
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --surface-soft: #f6f8fb;
+  --surface-warm: #eef5fb;
+  --line: #d7dde6;
+  --text: #16202c;
+  --muted: #5f6977;
+  --accent: #1f6fa8;
+  --ink: #123248;
+  --shadow: 0 10px 28px rgba(10, 31, 45, 0.08);
+  --radius: 8px;
+  --font-display: "Segoe UI", "Inter", sans-serif;
+  --font-body: "Segoe UI", "Inter", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: #fff;
+  padding: 0.68rem 0.9rem;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+button:hover {
+  background: #24445f;
+  border-color: #24445f;
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.82rem 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+textarea {
+  resize: vertical;
+}
+
+label {
+  min-width: 0;
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  min-height: calc(100vh - 2rem);
+}
+
+.panelHeader,
+.briefHeader,
+.noteHeader,
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.panelHeader h1,
+.panelHeader h2,
+.notesHeader h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.eyebrow {
+  margin: 0 0 0.15rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+}
+
+.secondaryButton {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.secondaryButton:hover {
+  background: var(--surface-soft);
+  border-color: var(--ink);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  overflow: auto;
+}
+
+.listItem {
+  text-align: left;
+  border-radius: var(--radius);
+  padding: 0.9rem;
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  color: var(--text);
+}
+
+.listItem strong,
+.listItem span {
+  display: block;
+}
+
+.listItem span {
+  color: var(--muted);
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.listItem.active {
+  border-color: var(--accent);
+  background: var(--surface-warm);
+}
+
+.notesHeader {
+  margin-top: auto;
+}
+
+.workspacePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mainHeader {
+  align-items: center;
+}
+
+.tabBar {
+  display: flex;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.8rem;
+}
+
+.tabButton {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--line);
+  padding: 0.55rem 0.85rem;
+}
+
+.tabButton:hover {
+  border-color: var(--accent);
+}
+
+.tabButton.active {
+  background: var(--surface-warm);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.tabView {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.noteView {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.titleInput {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  border: 0;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.draftStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(62px, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.draftStats div {
+  min-width: 62px;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.draftStats dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.draftStats dd {
+  margin: 0.15rem 0 0;
+  font-weight: 700;
+}
+
+.noteArea {
+  min-height: 440px;
+  flex: 1;
+  line-height: 1.6;
+  background: #fff;
+}
+
+.chatView {
+  min-height: 0;
+}
+
+.chatToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.promptArea {
+  min-height: 110px;
+}
+
+.promptRail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.promptButton {
+  min-height: 72px;
+  text-align: left;
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--line);
+  line-height: 1.35;
+}
+
+.promptButton:hover {
+  background: var(--surface-warm);
+  border-color: var(--accent);
+}
+
+.chatStream {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.bubble {
+  padding: 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+}
+
+.bubble span {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.bubble.user {
+  background: var(--surface-soft);
+}
+
+.bubble.assistant {
+  background: var(--surface-warm);
+  border-color: #c8daeb;
+}
+
+.inlineAction {
+  margin-top: 0.8rem;
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+  padding: 0.45rem 0.7rem;
+}
+
+.inlineAction:hover {
+  background: #fff;
+  border-color: var(--accent);
+}
+
+.chatForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.chatForm textarea {
+  min-height: 120px;
+}
+
+.settingsCard,
+.briefPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.settingsHeader,
+.briefHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.settingsHeader h3,
+.briefHeader h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.settingsGrid,
+.briefGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.settingsCard label,
+.briefGrid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.briefGrid label:first-child,
+.briefGrid label:nth-child(2) {
+  grid-column: 1 / -1;
+}
+
+.briefGrid textarea {
+  min-height: 74px;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.toggle input {
+  width: auto;
+}
+
+.statusRow {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.statusFoot {
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  font-size: 0.86rem;
+}
+
+.emptyState {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  min-height: 180px;
+  padding: 1rem;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.mobileConfigHint {
+  display: none;
+}
+
+@media (max-width: 1060px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    min-height: auto;
+  }
+
+  .mobileConfigHint {
+    display: flex;
+    min-height: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 0.75rem;
+  }
+
+  .panelHeader,
+  .noteHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .briefGrid,
+  .settingsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .promptRail {
+    grid-template-columns: 1fr;
+  }
+
+  .chatToolbar,
+  .settingsHeader,
+  .briefHeader,
+  .statusRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .draftStats {
+    width: 100%;
+  }
+
+  .tabBar {
+    overflow: auto;
+  }
+}
