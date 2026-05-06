@@ -15,6 +15,17 @@ export function getSupabaseAdminClient(): SupabaseClient | null {
     return cachedClient;
   }
 
+  try {
+    const parsed = new URL(url);
+    if (!parsed.protocol.startsWith("http")) {
+      cachedClient = null;
+      return cachedClient;
+    }
+  } catch {
+    cachedClient = null;
+    return cachedClient;
+  }
+
   cachedClient = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
