@@ -34,10 +34,15 @@ async function readCodexApiKey(): Promise<string | null> {
   return cachedCodexApiKey;
 }
 
-async function resolveApiKey(settingsApiKey: string): Promise<string> {
+async function resolveApiKey(settingsApiKey: string, baseUrl: string): Promise<string> {
   const fromSettings = settingsApiKey.trim();
   if (fromSettings) {
     return fromSettings;
+  }
+
+  const usingDeepSeek = baseUrl.includes("api.deepseek.com");
+  if (usingDeepSeek) {
+    return process.env.DEEPSEEK_API_KEY?.trim() || "";
   }
 
   const fromEnv =
@@ -73,8 +78,16 @@ function resolveBaseUrl(settingsBaseUrl: string): string {
 
 export async function generateAssistantReply(input: ChatRequestInput) {
   const { settings, project, note, history, message, includeNote } = input;
-  const apiKey = await resolveApiKey(settings.apiKey);
-  const baseUrl = resolveBaseUrl(settings.baseUrl);
+  const rawBaseUrl = resolveBaseUrl(settings.baseUrl);
+  const shouldUseDeepSeekDefault =
+    rawBaseUrl.includes("api.openai.com") &&
+    !settings.apiKey.trim() &&
+    !process.env.OPENAI_API_KEY?.trim() &&
+    !process.env.CODEX_OPENAI_API_KEY?.trim() &&
+    !!process.env.DEEPSEEK_API_KEY?.trim();
+  const baseUrl = shouldUseDeepSeekDefault ? "https://api.deepseek.com/v1" : rawBaseUrl;
+  const model = shouldUseDeepSeekDefault ? "deepseek-v4-flash" : settings.model;
+  const apiKey = await resolveApiKey(settings.apiKey, baseUrl);
 
   if (!apiKey) {
     return {
@@ -106,7 +119,7 @@ export async function generateAssistantReply(input: ChatRequestInput) {
   });
 
   const response = await client.chat.completions.create({
-    model: settings.model,
+    model,
     temperature: 0.8,
     messages: [
       {

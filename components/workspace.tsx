@@ -170,28 +170,32 @@ export function Workspace({ initialState }: WorkspaceProps) {
   }, [activeSessionId, sessions]);
 
   async function handleCreateProject() {
-    const name = window.prompt("Project name", "New Project");
-    if (!name?.trim()) return;
+    try {
+      const name = window.prompt("Project name", "New Project");
+      if (!name?.trim()) return;
 
-    const project = await postJson<Project>("/api/projects", {
-      name: name.trim(),
-      description: "",
-      logline: "",
-      genre: "",
-      tone: "",
-      targetLength: ""
-    });
-    const note = await postJson<Note>("/api/notes", {
-      projectId: project.id,
-      title: "Drafts/Untitled Note",
-      content: ""
-    });
+      const project = await postJson<Project>("/api/projects", {
+        name: name.trim(),
+        description: "",
+        logline: "",
+        genre: "",
+        tone: "",
+        targetLength: ""
+      });
+      const note = await postJson<Note>("/api/notes", {
+        projectId: project.id,
+        title: "Drafts/Untitled Note",
+        content: ""
+      });
 
-    setProjects((current) => [project, ...current]);
-    setNotes((current) => [note, ...current]);
-    setActiveProjectId(project.id);
-    setActiveNoteId(note.id);
-    setStatus("Project created");
+      setProjects((current) => [project, ...current]);
+      setNotes((current) => [note, ...current]);
+      setActiveProjectId(project.id);
+      setActiveNoteId(note.id);
+      setStatus("Project created");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Create project failed");
+    }
   }
 
   async function handleCreateFolder() {
@@ -202,20 +206,24 @@ export function Workspace({ initialState }: WorkspaceProps) {
   }
 
   async function handleCreateNote() {
-    if (!activeProjectId) return;
-    const title = window.prompt("Note title", "Untitled Note");
-    if (!title?.trim()) return;
+    try {
+      if (!activeProjectId) return;
+      const title = window.prompt("Note title", "Untitled Note");
+      if (!title?.trim()) return;
 
-    const fullTitle = selectedFolder ? `${selectedFolder}/${title.trim()}` : title.trim();
-    const note = await postJson<Note>("/api/notes", {
-      projectId: activeProjectId,
-      title: fullTitle,
-      content: ""
-    });
+      const fullTitle = selectedFolder ? `${selectedFolder}/${title.trim()}` : title.trim();
+      const note = await postJson<Note>("/api/notes", {
+        projectId: activeProjectId,
+        title: fullTitle,
+        content: ""
+      });
 
-    setNotes((current) => [note, ...current]);
-    setActiveNoteId(note.id);
-    setStatus("Note created");
+      setNotes((current) => [note, ...current]);
+      setActiveNoteId(note.id);
+      setStatus("Note created");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Create note failed");
+    }
   }
 
   function handleToggleFavorite(noteId: string) {

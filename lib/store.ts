@@ -10,9 +10,9 @@ const DATA_FILE = path.join(DATA_DIR, "app.json");
 
 const defaultSettings: AppSettings = {
   provider: "openai-compatible",
-  model: "gpt-4o-mini",
+  model: "deepseek-v4-flash",
   apiKey: "",
-  baseUrl: "https://api.openai.com/v1",
+  baseUrl: "https://api.deepseek.com/v1",
   systemPrompt:
     "You are a focused screenplay writing copilot. Help with concise rewrites, summaries, structure, beats, dialogue polish, and next actions."
 };
