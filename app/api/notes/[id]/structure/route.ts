@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { readState, writeState } from "@/lib/store";
+import { readState, updateNoteStructuredSections } from "@/lib/store";
 import { StructuredSections } from "@/lib/types";
 
 type Mode = "append" | "replace";
@@ -55,14 +55,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     updatedSections[key] = nextSections[key];
   }
 
-  const updatedNote = {
-    ...note,
-    structuredSections: nextSections,
-    updatedAt: new Date().toISOString()
-  };
-
-  state.notes[index] = updatedNote;
-  await writeState(state);
+  const updatedNote = await updateNoteStructuredSections(note.id, nextSections);
+  if (!updatedNote) {
+    return jsonError("NOT_FOUND", "Note not found.", 404);
+  }
 
   return NextResponse.json({ note: updatedNote, updatedSections });
 }
