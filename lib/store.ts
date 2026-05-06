@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
+import { getAuthedUser } from "@/lib/auth";
 import { getSupabaseAdminClient, isSupabaseEnabled } from "@/lib/supabase";
 import { AppSettings, AppState, ChatMessage, Note, Project, StructuredSections } from "@/lib/types";
 
@@ -53,6 +54,7 @@ const defaultState = (): AppState => {
 
 type DbProject = {
   id: string;
+  user_id: string;
   name: string;
   description: string | null;
   logline: string | null;
@@ -64,6 +66,7 @@ type DbProject = {
 
 type DbNote = {
   id: string;
+  user_id: string;
   project_id: string;
   title: string;
   content: string;
@@ -73,6 +76,7 @@ type DbNote = {
 
 type DbMessage = {
   id: string;
+  user_id: string;
   project_id: string | null;
   note_id: string | null;
   session_id: string | null;
@@ -84,6 +88,7 @@ type DbMessage = {
 
 type DbSettings = {
   id: string;
+  user_id: string;
   provider: string;
   model: string;
   api_key: string;
@@ -91,6 +96,14 @@ type DbSettings = {
   system_prompt: string;
   updated_at: string;
 };
+
+async function requireScopeUserId() {
+  const user = await getAuthedUser();
+  if (!user?.id) {
+    throw new Error("UNAUTHORIZED");
+  }
+  return user.id;
+}
 
 async function ensureStoreFile() {
   await mkdir(DATA_DIR, { recursive: true });
@@ -153,17 +166,17 @@ function mapMessageFromDb(message: DbMessage): ChatMessage {
   };
 }
 
-async function readSupabaseState(): Promise<AppState> {
+async function readSupabaseState(userId: string): Promise<AppState> {
   const client = getSupabaseAdminClient();
   if (!client) {
     return readFileState();
   }
 
   const [projectsRes, notesRes, messagesRes, settingsRes] = await Promise.all([
-    client.from("projects").select("*").order("created_at", { ascending: false }),
-    client.from("notes").select("*").order("updated_at", { ascending: false }),
-    client.from("messages").select("*").order("created_at", { ascending: true }),
-    client.from("settings").select("*").eq("id", "global").maybeSingle()
+    client.from("projects").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+    client.from("notes").select("*").eq("user_id", userId).order("updated_at", { ascending: false }),
+    client.from("messages").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
+    client.from("settings").select("*").eq("user_id", userId).eq("id", "global").maybeSingle()
   ]);
 
   if (projectsRes.error || notesRes.error || messagesRes.error || settingsRes.error) {
@@ -193,7 +206,6 @@ async function readSupabaseState(): Promise<AppState> {
 
   const normalized = normalizeState({ projects, notes, messages, settings });
 
-  // First run auto-seed for empty project space.
   if (projects.length === 0 && notes.length === 0) {
     const seed = defaultState();
     await Promise.all(seed.projects.map((project) => upsertProject(project)));
@@ -210,8 +222,12 @@ async function readSupabaseState(): Promise<AppState> {
 export async function readState(): Promise<AppState> {
   if (isSupabaseEnabled()) {
     try {
-      return await readSupabaseState();
+      const userId = await requireScopeUserId();
+      return await readSupabaseState(userId);
     } catch (error) {
+      if (error instanceof Error && error.message === "UNAUTHORIZED") {
+        throw error;
+      }
       console.error("Supabase readState failed, fallback to file store:", error);
       return readFileState();
     }
@@ -250,6 +266,8 @@ export async function upsertProject(input: Partial<Project> & Pick<Project, "nam
     return project;
   }
 
+  const userId = await requireScopeUserId();
+
   try {
     const client = getSupabaseAdminClient();
     if (!client) throw new Error("Supabase client unavailable");
@@ -257,6 +275,7 @@ export async function upsertProject(input: Partial<Project> & Pick<Project, "nam
     const now = new Date().toISOString();
     const row = {
       id: input.id ?? randomUUID(),
+      user_id: userId,
       name: input.name,
       description: input.description ?? "",
       logline: input.logline ?? "",
@@ -312,21 +331,39 @@ export async function upsertNote(input: Partial<Note> & Pick<Note, "projectId" |
     return note;
   }
 
+  const userId = await requireScopeUserId();
+
   try {
     const client = getSupabaseAdminClient();
     if (!client) throw new Error("Supabase client unavailable");
+
+    const { data: projectRow } = await client
+      .from("projects")
+      .select("id")
+      .eq("id", input.projectId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!projectRow) {
+      throw new Error("Project not found or unauthorized.");
+    }
 
     let sections: StructuredSections | undefined = input.structuredSections
       ? { ...defaultStructuredSections(), ...input.structuredSections }
       : undefined;
     if (!sections && input.id) {
-      const { data } = await client.from("notes").select("structured_sections").eq("id", input.id).maybeSingle();
+      const { data } = await client
+        .from("notes")
+        .select("structured_sections")
+        .eq("id", input.id)
+        .eq("user_id", userId)
+        .maybeSingle();
       const existing = (data as DbNote | null)?.structured_sections as Partial<StructuredSections> | undefined;
       sections = { ...defaultStructuredSections(), ...(existing ?? {}) };
     }
 
     const row = {
       id: input.id ?? randomUUID(),
+      user_id: userId,
       project_id: input.projectId,
       title: input.title,
       content: input.content,
@@ -369,6 +406,8 @@ export async function updateNoteStructuredSections(noteId: string, sections: Str
     return state.notes[index];
   }
 
+  const userId = await requireScopeUserId();
+
   try {
     const client = getSupabaseAdminClient();
     if (!client) throw new Error("Supabase client unavailable");
@@ -377,6 +416,7 @@ export async function updateNoteStructuredSections(noteId: string, sections: Str
       .from("notes")
       .update({ structured_sections: sections, updated_at: new Date().toISOString() })
       .eq("id", noteId)
+      .eq("user_id", userId)
       .select("*")
       .maybeSingle();
 
@@ -402,12 +442,15 @@ export async function saveSettings(settings: AppSettings) {
     return settings;
   }
 
+  const userId = await requireScopeUserId();
+
   try {
     const client = getSupabaseAdminClient();
     if (!client) throw new Error("Supabase client unavailable");
 
     const row = {
       id: "global",
+      user_id: userId,
       provider: settings.provider,
       model: settings.model,
       api_key: settings.apiKey,
@@ -437,12 +480,15 @@ export async function appendMessages(messages: ChatMessage[]) {
     return messages;
   }
 
+  const userId = await requireScopeUserId();
+
   try {
     const client = getSupabaseAdminClient();
     if (!client) throw new Error("Supabase client unavailable");
 
     const rows = messages.map((message) => ({
       id: message.id,
+      user_id: userId,
       project_id: message.projectId,
       note_id: message.noteId,
       session_id: message.sessionId,
