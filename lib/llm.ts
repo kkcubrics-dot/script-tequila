@@ -63,9 +63,11 @@ function resolveBaseUrl(settingsBaseUrl: string): string {
   const fallback = process.env.DEEPSEEK_API_KEY?.trim()
     ? "https://api.deepseek.com/v1"
     : "https://api.openai.com/v1";
+  const normalizedRaw =
+    raw && !raw.startsWith("http://") && !raw.startsWith("https://") ? `https://${raw}` : raw;
 
   try {
-    const url = new URL(raw || fallback);
+    const url = new URL(normalizedRaw || fallback);
     if (!url.protocol.startsWith("http")) {
       return fallback;
     }

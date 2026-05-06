@@ -4,7 +4,12 @@ import { saveSettings } from "@/lib/store";
 import { AppSettings } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json()) as AppSettings;
-  const settings = await saveSettings(body);
-  return NextResponse.json(settings);
+  try {
+    const body = (await request.json()) as AppSettings;
+    const settings = await saveSettings(body);
+    return NextResponse.json(settings);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown settings error.";
+    return NextResponse.json({ error: { code: "SETTINGS_ERROR", message } }, { status: 500 });
+  }
 }
