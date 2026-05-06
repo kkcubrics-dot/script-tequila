@@ -249,12 +249,12 @@ export function Workspace({ initialState }: WorkspaceProps) {
     }
   }
 
-  function applyGeminiDefaults() {
+  function applyOpenAIDefaults() {
     setSettings((current) => ({
       ...current,
-      provider: "gemini",
-      model: "gemini-2.5-flash",
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai"
+      provider: "openai-compatible",
+      model: "gpt-4o-mini",
+      baseUrl: "https://api.openai.com/v1"
     }));
   }
 
@@ -450,7 +450,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
               <textarea
                 value={chatInput}
                 onChange={(event) => setChatInput(event.target.value)}
-                placeholder="Ask Gemini to rewrite, summarize, or brainstorm."
+                placeholder="Ask OpenAI to rewrite, summarize, or brainstorm."
               />
               <button type="submit" disabled={isPending || !chatInput.trim()}>
                 Send
@@ -464,8 +464,8 @@ export function Workspace({ initialState }: WorkspaceProps) {
             <form className="settingsCard" onSubmit={handleSaveSettings}>
               <div className="settingsHeader">
                 <h3>Model API</h3>
-                <button type="button" className="secondaryButton" onClick={applyGeminiDefaults}>
-                  Use Gemini defaults
+                <button type="button" className="secondaryButton" onClick={applyOpenAIDefaults}>
+                  Use OpenAI defaults
                 </button>
               </div>
 
@@ -476,7 +476,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
                     type="password"
                     value={settings.apiKey}
                     onChange={(event) => setSettings({ ...settings, apiKey: event.target.value })}
-                    placeholder="AIza... or compatible API key"
+                    placeholder="Leave empty to use OPENAI_API_KEY from server env"
                   />
                 </label>
                 <label>
@@ -485,9 +485,9 @@ export function Workspace({ initialState }: WorkspaceProps) {
                     value={settings.model}
                     onChange={(event) => setSettings({ ...settings, model: event.target.value })}
                   >
-                    <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                    <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                    <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
+                    <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                    <option value="gpt-4.1">gpt-4.1</option>
                   </select>
                 </label>
                 <label>
@@ -568,7 +568,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
         ) : null}
 
         <div className="statusFoot">
-          <span>Provider: {settings.provider || "gemini"}</span>
+          <span>Provider: {settings.provider || "openai-compatible"}</span>
           <span>Model: {settings.model}</span>
           <span>{activeProjectNotes.length} notes</span>
           <span>{activeMessages.length} chat messages</span>
@@ -577,7 +577,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
 
       <section className="panel mobileConfigHint">
         <h3>Quick Config</h3>
-        <p>Switch to the Config tab to update Gemini API settings.</p>
+        <p>Switch to the Config tab to update OpenAI API settings.</p>
         <button type="button" onClick={() => setActiveTab("config")}>
           Open Config Tab
         </button>

@@ -8,12 +8,12 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "app.json");
 
 const defaultSettings: AppSettings = {
-  provider: "gemini",
-  model: "gemini-2.5-flash",
+  provider: "openai-compatible",
+  model: "gpt-4o-mini",
   apiKey: "",
-  baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+  baseUrl: "https://api.openai.com/v1",
   systemPrompt:
-    "You are a focused writing copilot for a note-taking IDE. Help with concise rewrites, summaries, structure, and next actions."
+    "You are a focused screenplay writing copilot. Help with concise rewrites, summaries, structure, beats, dialogue polish, and next actions."
 };
 
 const defaultState = (): AppState => {
