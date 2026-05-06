@@ -26,12 +26,14 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 
   if (!response.ok) {
     let message = "Request failed";
-    try {
-      const payload = (await response.json()) as { error?: { code?: string; message?: string } };
-      if (payload.error?.message) message = payload.error.message;
-    } catch {
-      const text = await response.text();
-      if (text) message = text;
+    const text = await response.text();
+    if (text) {
+      try {
+        const payload = JSON.parse(text) as { error?: { code?: string; message?: string }; message?: string };
+        message = payload.error?.message || payload.message || text;
+      } catch {
+        message = text;
+      }
     }
     throw new Error(message);
   }

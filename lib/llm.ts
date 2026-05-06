@@ -59,21 +59,30 @@ async function resolveApiKey(settingsApiKey: string, baseUrl: string): Promise<s
 }
 
 function resolveBaseUrl(settingsBaseUrl: string): string {
-  const raw = settingsBaseUrl.trim() || process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1";
-  if (!raw) {
-    return "https://api.openai.com/v1";
-  }
+  const raw = settingsBaseUrl.trim() || process.env.OPENAI_BASE_URL?.trim() || "";
+  const fallback = process.env.DEEPSEEK_API_KEY?.trim()
+    ? "https://api.deepseek.com/v1"
+    : "https://api.openai.com/v1";
 
   try {
-    const url = new URL(raw);
+    const url = new URL(raw || fallback);
+    if (!url.protocol.startsWith("http")) {
+      return fallback;
+    }
     if (url.hostname === "api.deepseek.com" && (url.pathname === "" || url.pathname === "/")) {
       return "https://api.deepseek.com/v1";
     }
+    if (url.hostname === "api.openai.com" && (url.pathname === "" || url.pathname === "/")) {
+      return "https://api.openai.com/v1";
+    }
+    if (!url.pathname || url.pathname === "/") {
+      url.pathname = "/v1";
+      return url.toString().replace(/\/$/, "");
+    }
+    return url.toString().replace(/\/$/, "");
   } catch {
-    return raw;
+    return fallback;
   }
-
-  return raw;
 }
 
 export async function generateAssistantReply(input: ChatRequestInput) {
