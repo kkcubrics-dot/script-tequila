@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { getSupabaseAdminClient, isSupabaseEnabled } from "@/lib/supabase";
 import { AppSettings, AppState, ChatMessage, Note, Project, StructuredSections } from "@/lib/types";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = process.env.VERCEL ? path.join("/tmp", "data") : path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "app.json");
 
 const defaultSettings: AppSettings = {
@@ -208,7 +208,15 @@ async function readSupabaseState(): Promise<AppState> {
 }
 
 export async function readState(): Promise<AppState> {
-  return isSupabaseEnabled() ? readSupabaseState() : readFileState();
+  if (isSupabaseEnabled()) {
+    try {
+      return await readSupabaseState();
+    } catch (error) {
+      console.error("Supabase readState failed, fallback to file store:", error);
+      return readFileState();
+    }
+  }
+  return readFileState();
 }
 
 export async function writeState(nextState: AppState) {
