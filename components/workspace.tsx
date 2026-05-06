@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { LogoutButton } from "@/components/logout-button";
 
 import { AppState, AppSettings, ChatMessage, Note, Project } from "@/lib/types";
 
@@ -581,6 +582,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
         </div>
         <span>{status}</span>
         <span>{activeProject?.name || "No project"}</span>
+        <LogoutButton />
       </footer>
     </main>
   );

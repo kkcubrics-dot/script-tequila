@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireAuthedUser } from "@/lib/auth";
 import { generateAssistantReply } from "@/lib/llm";
 import { appendMessages, readState } from "@/lib/store";
 import { ChatMessage } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
   try {
+    await requireAuthedUser();
+
     const body = (await request.json()) as {
       projectId?: string | null;
       noteId?: string | null;
@@ -75,6 +78,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ userMessage, assistantMessage, sessionId });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown chat error.";
+    if (message === "UNAUTHORIZED") {
+      return jsonError("UNAUTHORIZED", "Login required.", 401);
+    }
     return jsonError("CHAT_ERROR", message, 500);
   }
 }
