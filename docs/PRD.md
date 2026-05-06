@@ -147,6 +147,19 @@
 
 ## 3) 未来计划
 
+### 3.0 执行优先级（当前决策）
+
+- 采用 `Web-first, iOS-follow` 策略：
+  - 先完成 Web 前端核心重构并达到可稳定验收。
+  - 冻结统一 API 契约（v1）后，再推进 iOS MVP 上线。
+- 原因：
+  - 避免 iOS 在 Web 重构期间反复跟改，降低双端返工成本。
+  - 先在 Web 收敛登录、限流、会话、错误处理，再复用到 iOS。
+- 阶段门禁（Go/No-Go）：
+  - Web 核心链路可回归通过。
+  - API schema 与错误码冻结（含 `requestId`）。
+  - Auth 与会话语义在 staging 环境稳定。
+
 ### 3.1 Phase 0（当前到近期）：打通核心链路
 
 - 完成 OpenAI SDK 主链路稳定化。
@@ -172,6 +185,14 @@
 - 生产环境部署 + 域名接入（`app.<your-domain>`）。
 - 建立基础运维项：HTTPS、健康检查、错误告警、备份策略。
 - iOS 客户端接入统一 API（先覆盖核心链路）。
+  - iOS MVP 范围（核心项目内）：
+    - 邮箱登录/注册/会话保持（含限流与错误提示）。
+    - 项目列表与项目切换。
+    - 笔记读取与保存（含保存态与失败重试）。
+    - 基础聊天流（会话列表、发消息、收回复、写回笔记）。
+  - 非目标（iOS 首版）：
+    - 复杂多面板编辑体验与深度排版。
+    - 高级离线协同与复杂冲突合并 UI。
 - Hermes / OpenOpenClaw Agent 接入 `agents/execute` 契约。
 - 跨端一致性策略：同一 `project/note/session` 在不同入口可连续工作。
 
@@ -245,6 +266,42 @@
     - `ChatPanel`
     - `ModeSwitcher`
   - [x] 请求逻辑抽到 `lib/api-client.ts`，页面只管状态渲染。
+  - 必要前端主流程（MVP）：
+    - `Auth Gate`：未登录跳 `/login`，已登录进入工作台。
+    - `Project/Note 导航`：项目切换、note 选择、新建、搜索、最近历史。
+    - `人类编辑主流程`：编辑标题/正文、保存状态（saved/dirty/saving/error）、失败可重试。
+    - `AI 对话主流程`：会话列表、新建/切换会话、消息流、发送消息、回复插入/替换 note。
+    - `模式切换主流程`：`focus-write` / `split` / `focus-chat`，切换不丢上下文。
+    - `基础系统流程`：状态栏、统一错误提示、登出。
+  - 容器与组件职责：
+    - `Workspace`：只负责顶层状态与编排。
+    - `SidebarProjectTree`：项目与笔记导航。
+    - `WorkspaceEditor`：写作编辑区与保存状态。
+    - `ChatPanel`：会话管理与对话执行。
+    - `ModeSwitcher`：视图模式切换与状态展示。
+
+- [ ] 4. 冻结跨端 API 契约（iOS 开发前置门）
+  - 冻结 `auth/project/note/chat/session` 请求响应 schema（v1）。
+  - 冻结统一错误码与文案映射（含 `email_rate_limit_exceeded`）。
+  - 补充最小契约测试，确保 Web/iOS/Agent 行为一致。
+
+- [ ] 5. iOS MVP（纳入核心项目）
+  - 工程与基础设施：
+    - 建立 iOS 工程（SwiftUI + supabase-swift）。
+    - 配置环境（Supabase URL/anon key、staging/prod 分离）。
+  - 鉴权与会话：
+    - 邮箱注册/登录、会话续期、登出。
+    - 注册按钮防重复提交与限流友好提示。
+  - 核心业务：
+    - 项目列表/切换、笔记读取/保存、基础聊天流。
+    - 支持将聊天结果插入/替换笔记区块（对齐 Web 语义）。
+  - 上线验收：
+    - TestFlight 冒烟通过核心链路。
+    - 与 Web 跨端连续用例（UC-04）通过。
+  - 设计样式原则（本轮）：
+    - 避免“表单感”，突出“协作工作区”层级。
+    - 聊天区采用 ChatGPT 风格骨架：会话列 + 消息流 + 底部 composer。
+    - 控件弱边框、状态强反馈，减少弹窗式打断。
 
 - [x] 4. 清掉“隐式兜底”（生产环境）
   - 生产环境禁止 silently fallback 到文件存储。
