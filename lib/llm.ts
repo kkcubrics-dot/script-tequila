@@ -87,6 +87,10 @@ function resolveBaseUrl(settingsBaseUrl: string): string {
   }
 }
 
+export const __test__ = {
+  resolveBaseUrl
+};
+
 export async function generateAssistantReply(input: ChatRequestInput) {
   const { settings, project, note, history, message, includeNote } = input;
   const rawBaseUrl = resolveBaseUrl(settings.baseUrl);

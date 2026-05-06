@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { LogoutButton } from "@/components/logout-button";
+import { postApi } from "@/lib/api-client";
 
 import { AppState, AppSettings, ChatMessage, Note, Project } from "@/lib/types";
 
@@ -17,30 +18,6 @@ const quickPrompts = [
   "把这一段对白改成更有潜台词的版本。",
   "把当前场景拆成节拍并标注情绪转折。"
 ];
-
-async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-
-  if (!response.ok) {
-    let message = "Request failed";
-    const text = await response.text();
-    if (text) {
-      try {
-        const payload = JSON.parse(text) as { error?: { code?: string; message?: string }; message?: string };
-        message = payload.error?.message || payload.message || text;
-      } catch {
-        message = text;
-      }
-    }
-    throw new Error(message);
-  }
-
-  return (await response.json()) as T;
-}
 
 function splitTitlePath(title: string) {
   const parts = title
@@ -177,7 +154,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
       const name = window.prompt("Project name", "New Project");
       if (!name?.trim()) return;
 
-      const project = await postJson<Project>("/api/projects", {
+      const project = await postApi<Project>("/api/projects", {
         name: name.trim(),
         description: "",
         logline: "",
@@ -185,7 +162,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
         tone: "",
         targetLength: ""
       });
-      const note = await postJson<Note>("/api/notes", {
+      const note = await postApi<Note>("/api/notes", {
         projectId: project.id,
         title: "Drafts/Untitled Note",
         content: ""
@@ -215,7 +192,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
       if (!title?.trim()) return;
 
       const fullTitle = selectedFolder ? `${selectedFolder}/${title.trim()}` : title.trim();
-      const note = await postJson<Note>("/api/notes", {
+      const note = await postApi<Note>("/api/notes", {
         projectId: activeProjectId,
         title: fullTitle,
         content: ""
@@ -251,7 +228,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
       setDraftState("saving");
       setStatus("Saving note...");
       try {
-        const saved = await postJson<Note>("/api/notes", activeNote);
+        const saved = await postApi<Note>("/api/notes", activeNote);
         setNotes((current) => current.map((item) => (item.id === saved.id ? saved : item)));
         setDraftState("saved");
         setStatus("Note saved");
@@ -265,7 +242,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
   async function handleRenameNote(note: Note) {
     const nextTitle = window.prompt("Rename note", note.title);
     if (!nextTitle?.trim() || nextTitle.trim() === note.title) return;
-    const saved = await postJson<Note>("/api/notes", { ...note, title: nextTitle.trim() });
+    const saved = await postApi<Note>("/api/notes", { ...note, title: nextTitle.trim() });
     setNotes((current) => current.map((item) => (item.id === saved.id ? saved : item)));
     setStatus("Note renamed");
   }
@@ -274,7 +251,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
     const { folder, baseName } = splitTitlePath(note.title);
     const targetFolder = window.prompt("Move to folder", folder || "Drafts");
     if (targetFolder === null) return;
-    const saved = await postJson<Note>("/api/notes", {
+    const saved = await postApi<Note>("/api/notes", {
       ...note,
       title: targetFolder.trim() ? `${targetFolder.trim()}/${baseName}` : baseName
     });
@@ -287,7 +264,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
     startTransition(async () => {
       setStatus("Saving settings...");
       try {
-        const saved = await postJson<AppSettings>("/api/settings", settings);
+        const saved = await postApi<AppSettings>("/api/settings", settings);
         setSettings(saved);
         setStatus("Settings saved");
       } catch (error) {
@@ -313,7 +290,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
     setChatInput("");
 
     try {
-      const response = await postJson<{ userMessage: ChatMessage; assistantMessage: ChatMessage; sessionId: string }>(
+      const response = await postApi<{ userMessage: ChatMessage; assistantMessage: ChatMessage; sessionId: string }>(
         "/api/chat",
         {
           projectId: activeProjectId || null,
@@ -344,7 +321,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
     setViewMode("focus-write");
 
     try {
-      const saved = await postJson<Note>("/api/notes", draft);
+      const saved = await postApi<Note>("/api/notes", draft);
       setNotes((current) => current.map((item) => (item.id === saved.id ? saved : item)));
       setStatus("Applied to note");
       setDraftState("saved");

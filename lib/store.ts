@@ -8,6 +8,7 @@ import { AppSettings, AppState, ChatMessage, Note, Project, StructuredSections }
 
 const DATA_DIR = process.env.VERCEL ? path.join("/tmp", "data") : path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "app.json");
+const DEV_FALLBACK = process.env.NODE_ENV !== "production";
 
 const defaultSettings: AppSettings = {
   provider: "openai-compatible",
@@ -228,7 +229,10 @@ export async function readState(): Promise<AppState> {
       if (error instanceof Error && error.message === "UNAUTHORIZED") {
         throw error;
       }
-      console.error("Supabase readState failed, fallback to file store:", error);
+      if (!DEV_FALLBACK) {
+        throw error;
+      }
+      console.error("Supabase readState failed, fallback to file store in development:", error);
       return readFileState();
     }
   }
@@ -289,7 +293,8 @@ export async function upsertProject(input: Partial<Project> & Pick<Project, "nam
     if (error) throw new Error(error.message);
     return mapProjectFromDb(data as DbProject);
   } catch (error) {
-    console.error("Supabase upsertProject failed, fallback to file store:", error);
+    if (!DEV_FALLBACK) throw error;
+    console.error("Supabase upsertProject failed, fallback to file store in development:", error);
     const state = await readFileState();
     const now = new Date().toISOString();
     const project: Project = {
@@ -375,7 +380,8 @@ export async function upsertNote(input: Partial<Note> & Pick<Note, "projectId" |
     if (error) throw new Error(error.message);
     return mapNoteFromDb(data as DbNote);
   } catch (error) {
-    console.error("Supabase upsertNote failed, fallback to file store:", error);
+    if (!DEV_FALLBACK) throw error;
+    console.error("Supabase upsertNote failed, fallback to file store in development:", error);
     const state = await readFileState();
     const existing = input.id ? state.notes.find((item) => item.id === input.id) : null;
     const note: Note = {
@@ -424,7 +430,8 @@ export async function updateNoteStructuredSections(noteId: string, sections: Str
     if (!data) return null;
     return mapNoteFromDb(data as DbNote);
   } catch (error) {
-    console.error("Supabase updateNoteStructuredSections failed, fallback to file store:", error);
+    if (!DEV_FALLBACK) throw error;
+    console.error("Supabase updateNoteStructuredSections failed, fallback to file store in development:", error);
     const state = await readFileState();
     const index = state.notes.findIndex((item) => item.id === noteId);
     if (index < 0) return null;
@@ -464,7 +471,8 @@ export async function saveSettings(settings: AppSettings) {
 
     return settings;
   } catch (error) {
-    console.error("Supabase saveSettings failed, fallback to file store:", error);
+    if (!DEV_FALLBACK) throw error;
+    console.error("Supabase saveSettings failed, fallback to file store in development:", error);
     const state = await readFileState();
     state.settings = settings;
     await writeFileState(state);
@@ -503,7 +511,8 @@ export async function appendMessages(messages: ChatMessage[]) {
 
     return messages;
   } catch (error) {
-    console.error("Supabase appendMessages failed, fallback to file store:", error);
+    if (!DEV_FALLBACK) throw error;
+    console.error("Supabase appendMessages failed, fallback to file store in development:", error);
     const state = await readFileState();
     state.messages.push(...messages);
     await writeFileState(state);

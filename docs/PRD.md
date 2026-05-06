@@ -224,4 +224,29 @@
 - 关键验收：
   - 跨端读取同一 `project/note/session`。
   - 同步后结构字段一致。
-  - 异常时有可操作错误提示，重试后会话不断裂。
+- 异常时有可操作错误提示，重试后会话不断裂。
+
+## 5) 重构 Todo（当前执行）
+
+- [x] 1. 后端“收口”（第一版）
+  - 拆 `store.ts`：
+    - `repositories/*`（纯 DB）
+    - `services/*`（业务规则）
+    - `routes/*`（鉴权+校验+调用）
+  - 禁止 route 里写业务逻辑。
+
+- [x] 2. 统一 API 契约（核心业务接口）
+  - 全部接口统一返回：`{ data, error, requestId }`。
+
+- [ ] 3. 重构前端主流程
+  - 拆 `workspace.tsx` 为：
+    - `SidebarProjectTree`
+    - `WorkspaceEditor`
+    - `ChatPanel`
+    - `ModeSwitcher`
+  - [x] 请求逻辑抽到 `lib/api-client.ts`，页面只管状态渲染。
+
+- [x] 4. 清掉“隐式兜底”（生产环境）
+  - 生产环境禁止 silently fallback 到文件存储。
+  - 改为：明确报错 + 日志 + debug 页面展示。
+  - 兜底仅限 development。

@@ -1,20 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { requireAuthedUser } from "@/lib/auth";
-import { saveSettings } from "@/lib/store";
+import { fail, ok } from "@/lib/routes/response";
+import { saveAppSettings } from "@/lib/services/workspace-service";
 import { AppSettings } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
   try {
     await requireAuthedUser();
-
     const body = (await request.json()) as AppSettings;
-    const settings = await saveSettings(body);
-    return NextResponse.json(settings);
+    const settings = await saveAppSettings(body);
+    return ok(settings);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown settings error.";
-    const status = message === "UNAUTHORIZED" ? 401 : 500;
-    const code = message === "UNAUTHORIZED" ? "UNAUTHORIZED" : "SETTINGS_ERROR";
-    return NextResponse.json({ error: { code, message: status === 401 ? "Login required." : message } }, { status });
+    if (message === "UNAUTHORIZED") return fail("UNAUTHORIZED", "Login required.", 401);
+    return fail("SETTINGS_ERROR", message, 500);
   }
 }
