@@ -250,24 +250,45 @@ export async function upsertProject(input: Partial<Project> & Pick<Project, "nam
     return project;
   }
 
-  const client = getSupabaseAdminClient();
-  if (!client) throw new Error("Supabase client unavailable");
+  try {
+    const client = getSupabaseAdminClient();
+    if (!client) throw new Error("Supabase client unavailable");
 
-  const now = new Date().toISOString();
-  const row = {
-    id: input.id ?? randomUUID(),
-    name: input.name,
-    description: input.description ?? "",
-    logline: input.logline ?? "",
-    genre: input.genre ?? "",
-    tone: input.tone ?? "",
-    target_length: input.targetLength ?? "",
-    created_at: input.createdAt ?? now
-  };
+    const now = new Date().toISOString();
+    const row = {
+      id: input.id ?? randomUUID(),
+      name: input.name,
+      description: input.description ?? "",
+      logline: input.logline ?? "",
+      genre: input.genre ?? "",
+      tone: input.tone ?? "",
+      target_length: input.targetLength ?? "",
+      created_at: input.createdAt ?? now
+    };
 
-  const { data, error } = await client.from("projects").upsert(row).select("*").single();
-  if (error) throw new Error(error.message);
-  return mapProjectFromDb(data as DbProject);
+    const { data, error } = await client.from("projects").upsert(row).select("*").single();
+    if (error) throw new Error(error.message);
+    return mapProjectFromDb(data as DbProject);
+  } catch (error) {
+    console.error("Supabase upsertProject failed, fallback to file store:", error);
+    const state = await readFileState();
+    const now = new Date().toISOString();
+    const project: Project = {
+      id: input.id ?? randomUUID(),
+      name: input.name,
+      description: input.description ?? "",
+      logline: input.logline ?? "",
+      genre: input.genre ?? "",
+      tone: input.tone ?? "",
+      targetLength: input.targetLength ?? "",
+      createdAt: input.createdAt ?? now
+    };
+    const index = state.projects.findIndex((item) => item.id === project.id);
+    if (index >= 0) state.projects[index] = project;
+    else state.projects.unshift(project);
+    await writeFileState(state);
+    return project;
+  }
 }
 
 export async function upsertNote(input: Partial<Note> & Pick<Note, "projectId" | "title" | "content">) {
@@ -291,30 +312,49 @@ export async function upsertNote(input: Partial<Note> & Pick<Note, "projectId" |
     return note;
   }
 
-  const client = getSupabaseAdminClient();
-  if (!client) throw new Error("Supabase client unavailable");
+  try {
+    const client = getSupabaseAdminClient();
+    if (!client) throw new Error("Supabase client unavailable");
 
-  let sections: StructuredSections | undefined = input.structuredSections
-    ? { ...defaultStructuredSections(), ...input.structuredSections }
-    : undefined;
-  if (!sections && input.id) {
-    const { data } = await client.from("notes").select("structured_sections").eq("id", input.id).maybeSingle();
-    const existing = (data as DbNote | null)?.structured_sections as Partial<StructuredSections> | undefined;
-    sections = { ...defaultStructuredSections(), ...(existing ?? {}) };
+    let sections: StructuredSections | undefined = input.structuredSections
+      ? { ...defaultStructuredSections(), ...input.structuredSections }
+      : undefined;
+    if (!sections && input.id) {
+      const { data } = await client.from("notes").select("structured_sections").eq("id", input.id).maybeSingle();
+      const existing = (data as DbNote | null)?.structured_sections as Partial<StructuredSections> | undefined;
+      sections = { ...defaultStructuredSections(), ...(existing ?? {}) };
+    }
+
+    const row = {
+      id: input.id ?? randomUUID(),
+      project_id: input.projectId,
+      title: input.title,
+      content: input.content,
+      structured_sections: sections ?? defaultStructuredSections(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await client.from("notes").upsert(row).select("*").single();
+    if (error) throw new Error(error.message);
+    return mapNoteFromDb(data as DbNote);
+  } catch (error) {
+    console.error("Supabase upsertNote failed, fallback to file store:", error);
+    const state = await readFileState();
+    const existing = input.id ? state.notes.find((item) => item.id === input.id) : null;
+    const note: Note = {
+      id: input.id ?? randomUUID(),
+      projectId: input.projectId,
+      title: input.title,
+      content: input.content,
+      structuredSections: input.structuredSections ?? existing?.structuredSections ?? defaultStructuredSections(),
+      updatedAt: new Date().toISOString()
+    };
+    const index = state.notes.findIndex((item) => item.id === note.id);
+    if (index >= 0) state.notes[index] = note;
+    else state.notes.unshift(note);
+    await writeFileState(state);
+    return note;
   }
-
-  const row = {
-    id: input.id ?? randomUUID(),
-    project_id: input.projectId,
-    title: input.title,
-    content: input.content,
-    structured_sections: sections ?? defaultStructuredSections(),
-    updated_at: new Date().toISOString()
-  };
-
-  const { data, error } = await client.from("notes").upsert(row).select("*").single();
-  if (error) throw new Error(error.message);
-  return mapNoteFromDb(data as DbNote);
 }
 
 export async function updateNoteStructuredSections(noteId: string, sections: StructuredSections) {
@@ -329,19 +369,29 @@ export async function updateNoteStructuredSections(noteId: string, sections: Str
     return state.notes[index];
   }
 
-  const client = getSupabaseAdminClient();
-  if (!client) throw new Error("Supabase client unavailable");
+  try {
+    const client = getSupabaseAdminClient();
+    if (!client) throw new Error("Supabase client unavailable");
 
-  const { data, error } = await client
-    .from("notes")
-    .update({ structured_sections: sections, updated_at: new Date().toISOString() })
-    .eq("id", noteId)
-    .select("*")
-    .maybeSingle();
+    const { data, error } = await client
+      .from("notes")
+      .update({ structured_sections: sections, updated_at: new Date().toISOString() })
+      .eq("id", noteId)
+      .select("*")
+      .maybeSingle();
 
-  if (error) throw new Error(error.message);
-  if (!data) return null;
-  return mapNoteFromDb(data as DbNote);
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return mapNoteFromDb(data as DbNote);
+  } catch (error) {
+    console.error("Supabase updateNoteStructuredSections failed, fallback to file store:", error);
+    const state = await readFileState();
+    const index = state.notes.findIndex((item) => item.id === noteId);
+    if (index < 0) return null;
+    state.notes[index] = { ...state.notes[index], structuredSections: sections, updatedAt: new Date().toISOString() };
+    await writeFileState(state);
+    return state.notes[index];
+  }
 }
 
 export async function saveSettings(settings: AppSettings) {
@@ -352,23 +402,31 @@ export async function saveSettings(settings: AppSettings) {
     return settings;
   }
 
-  const client = getSupabaseAdminClient();
-  if (!client) throw new Error("Supabase client unavailable");
+  try {
+    const client = getSupabaseAdminClient();
+    if (!client) throw new Error("Supabase client unavailable");
 
-  const row = {
-    id: "global",
-    provider: settings.provider,
-    model: settings.model,
-    api_key: settings.apiKey,
-    base_url: settings.baseUrl,
-    system_prompt: settings.systemPrompt,
-    updated_at: new Date().toISOString()
-  };
+    const row = {
+      id: "global",
+      provider: settings.provider,
+      model: settings.model,
+      api_key: settings.apiKey,
+      base_url: settings.baseUrl,
+      system_prompt: settings.systemPrompt,
+      updated_at: new Date().toISOString()
+    };
 
-  const { error } = await client.from("settings").upsert(row);
-  if (error) throw new Error(error.message);
+    const { error } = await client.from("settings").upsert(row);
+    if (error) throw new Error(error.message);
 
-  return settings;
+    return settings;
+  } catch (error) {
+    console.error("Supabase saveSettings failed, fallback to file store:", error);
+    const state = await readFileState();
+    state.settings = settings;
+    await writeFileState(state);
+    return settings;
+  }
 }
 
 export async function appendMessages(messages: ChatMessage[]) {
@@ -379,24 +437,32 @@ export async function appendMessages(messages: ChatMessage[]) {
     return messages;
   }
 
-  const client = getSupabaseAdminClient();
-  if (!client) throw new Error("Supabase client unavailable");
+  try {
+    const client = getSupabaseAdminClient();
+    if (!client) throw new Error("Supabase client unavailable");
 
-  const rows = messages.map((message) => ({
-    id: message.id,
-    project_id: message.projectId,
-    note_id: message.noteId,
-    session_id: message.sessionId,
-    source: message.source,
-    role: message.role,
-    content: message.content,
-    created_at: message.createdAt
-  }));
+    const rows = messages.map((message) => ({
+      id: message.id,
+      project_id: message.projectId,
+      note_id: message.noteId,
+      session_id: message.sessionId,
+      source: message.source,
+      role: message.role,
+      content: message.content,
+      created_at: message.createdAt
+    }));
 
-  const { error } = await client.from("messages").insert(rows);
-  if (error) throw new Error(error.message);
+    const { error } = await client.from("messages").insert(rows);
+    if (error) throw new Error(error.message);
 
-  return messages;
+    return messages;
+  } catch (error) {
+    console.error("Supabase appendMessages failed, fallback to file store:", error);
+    const state = await readFileState();
+    state.messages.push(...messages);
+    await writeFileState(state);
+    return messages;
+  }
 }
 
 function normalizeState(input: Partial<AppState>): AppState {
