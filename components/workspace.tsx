@@ -8,11 +8,13 @@ type WorkspaceProps = {
   initialState: AppState;
 };
 
+type ViewMode = "focus-write" | "focus-chat" | "split";
+type TreeFolder = { path: string; name: string; depth: number };
+
 const quickPrompts = [
-  "Rewrite the current note with sharper scene tension while preserving the core events.",
-  "Break this scene into beats and call out where the emotional turn happens.",
-  "Polish the dialogue so every line has subtext and a distinct character voice.",
-  "Identify weak stakes, passive choices, and pacing drag in the current note."
+  "总结当前笔记的结构问题并给出3条可执行修改。",
+  "把这一段对白改成更有潜台词的版本。",
+  "把当前场景拆成节拍并标注情绪转折。"
 ];
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -23,11 +25,37 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Request failed");
+    let message = "Request failed";
+    try {
+      const payload = (await response.json()) as { error?: { code?: string; message?: string } };
+      if (payload.error?.message) message = payload.error.message;
+    } catch {
+      const text = await response.text();
+      if (text) message = text;
+    }
+    throw new Error(message);
   }
 
   return (await response.json()) as T;
+}
+
+function splitTitlePath(title: string) {
+  const parts = title
+    .split("/")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) {
+    return { folder: "", baseName: title.trim() || "Untitled Note" };
+  }
+  return {
+    folder: parts.slice(0, -1).join("/"),
+    baseName: parts[parts.length - 1]
+  };
+}
+
+function withFolder(title: string, folder: string) {
+  const { baseName } = splitTitlePath(title);
+  return folder.trim() ? `${folder.trim()}/${baseName}` : baseName;
 }
 
 export function Workspace({ initialState }: WorkspaceProps) {
@@ -35,57 +63,115 @@ export function Workspace({ initialState }: WorkspaceProps) {
   const [notes, setNotes] = useState(initialState.notes);
   const [messages, setMessages] = useState(initialState.messages);
   const [settings, setSettings] = useState(initialState.settings);
-  const [activeTab, setActiveTab] = useState<"notes" | "chat" | "config">("notes");
   const [activeProjectId, setActiveProjectId] = useState(initialState.projects[0]?.id ?? "");
   const [activeNoteId, setActiveNoteId] = useState(
     initialState.notes.find((item) => item.projectId === initialState.projects[0]?.id)?.id ?? ""
   );
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [includeNote, setIncludeNote] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>("focus-write");
   const [status, setStatus] = useState("Ready");
+  const [noteSearch, setNoteSearch] = useState("");
+  const [selectedFolder, setSelectedFolder] = useState("");
+  const [favorites, setFavorites] = useState<Record<string, true>>({});
+  const [draftState, setDraftState] = useState<"saved" | "dirty" | "saving">("saved");
+  const [selectionContext, setSelectionContext] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const activeProject = projects.find((item) => item.id === activeProjectId) ?? null;
-  const activeProjectNotes = useMemo(
-    () =>
-      notes
-        .filter((item) => item.projectId === activeProjectId)
-        .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)),
+  const projectNotes = useMemo(
+    () => notes.filter((item) => item.projectId === activeProjectId),
     [activeProjectId, notes]
   );
-  const activeNote =
-    activeProjectNotes.find((item) => item.id === activeNoteId) ?? activeProjectNotes[0] ?? null;
+
+  const folders = useMemo(() => {
+    const set = new Set<string>();
+    projectNotes.forEach((note) => {
+      const { folder } = splitTitlePath(note.title);
+      if (!folder) return;
+      const chunks = folder.split("/");
+      chunks.forEach((_, idx) => set.add(chunks.slice(0, idx + 1).join("/")));
+    });
+
+    return Array.from(set)
+      .sort((a, b) => a.localeCompare(b))
+      .map((path) => ({
+        path,
+        name: path.split("/").pop() || path,
+        depth: path.split("/").length - 1
+      })) as TreeFolder[];
+  }, [projectNotes]);
+
+  const filteredNotes = useMemo(() => {
+    const q = noteSearch.trim().toLowerCase();
+    return projectNotes
+      .filter((note) => {
+        const { folder, baseName } = splitTitlePath(note.title);
+        const matchFolder = selectedFolder ? folder === selectedFolder || folder.startsWith(`${selectedFolder}/`) : true;
+        const matchSearch = q
+          ? baseName.toLowerCase().includes(q) || folder.toLowerCase().includes(q) || note.content.toLowerCase().includes(q)
+          : true;
+        return matchFolder && matchSearch;
+      })
+      .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+  }, [noteSearch, projectNotes, selectedFolder]);
+
+  const activeNote = filteredNotes.find((item) => item.id === activeNoteId) ?? projectNotes.find((item) => item.id === activeNoteId) ?? filteredNotes[0] ?? null;
+
+  const sessions = useMemo(() => {
+    const scoped = messages.filter((item) => item.projectId === activeProjectId && item.sessionId);
+    const map = new Map<string, { id: string; updatedAt: string; preview: string; count: number }>();
+
+    scoped.forEach((msg) => {
+      if (!msg.sessionId) return;
+      const existing = map.get(msg.sessionId);
+      const preview = msg.role === "user" && msg.content.trim() ? msg.content.trim().slice(0, 52) : existing?.preview || "New chat";
+      if (!existing) {
+        map.set(msg.sessionId, { id: msg.sessionId, updatedAt: msg.createdAt, preview, count: 1 });
+      } else {
+        map.set(msg.sessionId, {
+          ...existing,
+          updatedAt: existing.updatedAt > msg.createdAt ? existing.updatedAt : msg.createdAt,
+          preview,
+          count: existing.count + 1
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+  }, [activeProjectId, messages]);
+
   const activeMessages = messages.filter(
-    (item) => item.projectId === activeProjectId && item.noteId === (activeNote?.id ?? null)
+    (item) => item.projectId === activeProjectId && (item.sessionId ?? null) === (activeSessionId ?? null)
   );
-  const lastAssistantMessage = [...activeMessages]
-    .reverse()
-    .find((item) => item.role === "assistant");
+
+  const lastAssistantMessage = [...activeMessages].reverse().find((item) => item.role === "assistant");
+
   const draftStats = useMemo(() => {
     const content = activeNote?.content.trim() ?? "";
     const words = content ? content.split(/\s+/).length : 0;
     const characters = content.length;
-    const readMinutes = Math.max(1, Math.ceil(words / 180));
-
-    return { words, characters, readMinutes };
+    return { words, characters };
   }, [activeNote?.content]);
 
+  const recentNotes = useMemo(
+    () => [...projectNotes].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)).slice(0, 8),
+    [projectNotes]
+  );
+
   useEffect(() => {
-    const firstNote = activeProjectNotes[0];
-    if (firstNote && !activeNote) {
-      setActiveNoteId(firstNote.id);
-      return;
-    }
-    if (!firstNote && activeNoteId) {
-      setActiveNoteId("");
-    }
-  }, [activeNote, activeNoteId, activeProjectNotes]);
+    if (!activeNote && filteredNotes[0]) setActiveNoteId(filteredNotes[0].id);
+  }, [activeNote, filteredNotes]);
+
+  useEffect(() => {
+    if (!activeSessionId && sessions[0]) setActiveSessionId(sessions[0].id);
+  }, [activeSessionId, sessions]);
 
   async function handleCreateProject() {
-    const name = window.prompt("Project name", "New Notebook");
-    if (!name?.trim()) {
-      return;
-    }
+    const name = window.prompt("Project name", "New Project");
+    if (!name?.trim()) return;
 
     const project = await postJson<Project>("/api/projects", {
       name: name.trim(),
@@ -97,7 +183,7 @@ export function Workspace({ initialState }: WorkspaceProps) {
     });
     const note = await postJson<Note>("/api/notes", {
       projectId: project.id,
-      title: "Untitled Note",
+      title: "Drafts/Untitled Note",
       content: ""
     });
 
@@ -105,23 +191,25 @@ export function Workspace({ initialState }: WorkspaceProps) {
     setNotes((current) => [note, ...current]);
     setActiveProjectId(project.id);
     setActiveNoteId(note.id);
-    setActiveTab("notes");
     setStatus("Project created");
   }
 
+  async function handleCreateFolder() {
+    const folder = window.prompt("Folder path", selectedFolder || "Drafts");
+    if (!folder?.trim()) return;
+    setSelectedFolder(folder.trim().replace(/^\/+|\/+$/g, ""));
+    setStatus("Folder selected");
+  }
+
   async function handleCreateNote() {
-    if (!activeProjectId) {
-      return;
-    }
-
+    if (!activeProjectId) return;
     const title = window.prompt("Note title", "Untitled Note");
-    if (!title?.trim()) {
-      return;
-    }
+    if (!title?.trim()) return;
 
+    const fullTitle = selectedFolder ? `${selectedFolder}/${title.trim()}` : title.trim();
     const note = await postJson<Note>("/api/notes", {
       projectId: activeProjectId,
-      title: title.trim(),
+      title: fullTitle,
       content: ""
     });
 
@@ -130,58 +218,57 @@ export function Workspace({ initialState }: WorkspaceProps) {
     setStatus("Note created");
   }
 
-  function handleNoteFieldChange(field: "title" | "content", value: string) {
-    if (!activeNote) {
-      return;
-    }
-
-    setNotes((current) =>
-      current.map((item) => (item.id === activeNote.id ? { ...item, [field]: value } : item))
-    );
-  }
-
-  function handleProjectFieldChange(field: keyof Pick<Project, "description" | "logline" | "genre" | "tone" | "targetLength">, value: string) {
-    if (!activeProject) {
-      return;
-    }
-
-    setProjects((current) =>
-      current.map((item) => (item.id === activeProject.id ? { ...item, [field]: value } : item))
-    );
-  }
-
-  function persistProject() {
-    if (!activeProject) {
-      return;
-    }
-
-    startTransition(async () => {
-      setStatus("Saving project...");
-      try {
-        const saved = await postJson<Project>("/api/projects", activeProject);
-        setProjects((current) => current.map((item) => (item.id === saved.id ? saved : item)));
-        setStatus("Project saved");
-      } catch (error) {
-        setStatus(error instanceof Error ? error.message : "Project save failed");
-      }
+  function handleToggleFavorite(noteId: string) {
+    setFavorites((current) => {
+      const next = { ...current };
+      if (next[noteId]) delete next[noteId];
+      else next[noteId] = true;
+      return next;
     });
   }
 
+  function handleNoteFieldChange(field: "title" | "content", value: string) {
+    if (!activeNote) return;
+    setDraftState("dirty");
+    setNotes((current) => current.map((item) => (item.id === activeNote.id ? { ...item, [field]: value } : item)));
+  }
+
   function persistNote() {
-    if (!activeNote) {
-      return;
-    }
+    if (!activeNote) return;
 
     startTransition(async () => {
+      setDraftState("saving");
       setStatus("Saving note...");
       try {
         const saved = await postJson<Note>("/api/notes", activeNote);
         setNotes((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+        setDraftState("saved");
         setStatus("Note saved");
       } catch (error) {
+        setDraftState("dirty");
         setStatus(error instanceof Error ? error.message : "Note save failed");
       }
     });
+  }
+
+  async function handleRenameNote(note: Note) {
+    const nextTitle = window.prompt("Rename note", note.title);
+    if (!nextTitle?.trim() || nextTitle.trim() === note.title) return;
+    const saved = await postJson<Note>("/api/notes", { ...note, title: nextTitle.trim() });
+    setNotes((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+    setStatus("Note renamed");
+  }
+
+  async function handleMoveNote(note: Note) {
+    const { folder, baseName } = splitTitlePath(note.title);
+    const targetFolder = window.prompt("Move to folder", folder || "Drafts");
+    if (targetFolder === null) return;
+    const saved = await postJson<Note>("/api/notes", {
+      ...note,
+      title: targetFolder.trim() ? `${targetFolder.trim()}/${baseName}` : baseName
+    });
+    setNotes((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+    setStatus("Note moved");
   }
 
   async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
@@ -198,26 +285,34 @@ export function Workspace({ initialState }: WorkspaceProps) {
     });
   }
 
+  function createSession() {
+    const id = crypto.randomUUID();
+    setActiveSessionId(id);
+    setChatInput("");
+    setViewMode("focus-chat");
+    setStatus("New chat created");
+  }
+
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!chatInput.trim()) {
-      return;
-    }
+    if (!chatInput.trim()) return;
 
     setStatus("Waiting for model...");
     const input = chatInput;
     setChatInput("");
 
     try {
-      const response = await postJson<{ userMessage: ChatMessage; assistantMessage: ChatMessage }>(
+      const response = await postJson<{ userMessage: ChatMessage; assistantMessage: ChatMessage; sessionId: string }>(
         "/api/chat",
         {
           projectId: activeProjectId || null,
-          noteId: activeNote?.id ?? null,
+          noteId: includeNote ? activeNote?.id ?? null : null,
           message: input,
-          includeNote
+          includeNote,
+          sessionId: activeSessionId
         }
       );
+      setActiveSessionId(response.sessionId);
       setMessages((current) => [...current, response.userMessage, response.assistantMessage]);
       setStatus("Response received");
     } catch (error) {
@@ -225,363 +320,258 @@ export function Workspace({ initialState }: WorkspaceProps) {
     }
   }
 
-  async function insertAssistantReply(replyText: string) {
-    if (!activeNote) {
-      setStatus("Select a note first");
-      return;
-    }
+  async function insertAssistantReply(replyText: string, mode: "append" | "replace") {
+    if (!activeNote) return;
 
-    const mergedContent = `${activeNote.content.trimEnd()}${
-      activeNote.content.trim() ? "\n\n" : ""
-    }${replyText.trim()}\n`;
-    const draft: Note = { ...activeNote, content: mergedContent };
+    const selected = selectionContext.trim();
+    const appended = `${activeNote.content.trimEnd()}${activeNote.content.trim() ? "\n\n" : ""}${replyText.trim()}\n`;
+    const replaced = selected ? activeNote.content.replace(selected, replyText.trim()) : appended;
+    const content = mode === "replace" ? replaced : appended;
+    const draft: Note = { ...activeNote, content };
 
     setNotes((current) => current.map((item) => (item.id === draft.id ? draft : item)));
-    setActiveTab("notes");
-    setStatus("Inserting reply...");
+    setViewMode("focus-write");
 
     try {
       const saved = await postJson<Note>("/api/notes", draft);
       setNotes((current) => current.map((item) => (item.id === saved.id ? saved : item)));
-      setStatus("Inserted into note");
+      setStatus("Applied to note");
+      setDraftState("saved");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Insert failed");
+      setStatus(error instanceof Error ? error.message : "Apply failed");
     }
   }
 
-  function applyOpenAIDefaults() {
-    setSettings((current) => ({
-      ...current,
-      provider: "openai-compatible",
-      model: "gpt-4o-mini",
-      baseUrl: "https://api.openai.com/v1"
-    }));
-  }
+  const workspaceClass = `workspace workspace-${viewMode}`;
 
   return (
-    <main className="shell">
-      <section className="panel sidebar">
-        <div className="panelHeader">
+    <main className={workspaceClass}>
+      <aside className="sidebar card">
+        <header className="sidebarHead">
           <div>
-            <p className="eyebrow">Script Tequila</p>
-            <h1>Projects</h1>
+            <p className="label">Script Tequila</p>
+            <h1>Project Tree</h1>
           </div>
-          <button onClick={handleCreateProject}>New project</button>
+          <button className="iconOnly" onClick={handleCreateProject} title="New project" aria-label="New project">＋</button>
+        </header>
+
+        <label className="controlLabel">
+          Project
+          <select value={activeProjectId} onChange={(e) => setActiveProjectId(e.target.value)}>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="treeActions">
+          <button className="iconOnly ghost" onClick={handleCreateFolder} title="New folder" aria-label="New folder">📁</button>
+          <button className="iconOnly ghost" onClick={handleCreateNote} title="New note" aria-label="New note">📝</button>
         </div>
 
-        <div className="list">
-          {projects.map((project) => (
+        <input
+          value={noteSearch}
+          onChange={(e) => setNoteSearch(e.target.value)}
+          placeholder="Search notes..."
+        />
+
+        <section className="tree cardSoft">
+          <button className={selectedFolder === "" ? "treeRow active" : "treeRow"} onClick={() => setSelectedFolder("")}>All Notes</button>
+          {folders.map((folder) => (
             <button
-              key={project.id}
-              className={project.id === activeProjectId ? "listItem active" : "listItem"}
-              onClick={() => {
-                setActiveProjectId(project.id);
-                setActiveTab("notes");
+              key={folder.path}
+              className={selectedFolder === folder.path ? "treeRow active" : "treeRow"}
+              onClick={() => setSelectedFolder(folder.path)}
+              style={{ paddingLeft: `${12 + folder.depth * 14}px` }}
+            >
+              {folder.name}
+            </button>
+          ))}
+
+          {filteredNotes.map((note) => {
+            const { baseName, folder } = splitTitlePath(note.title);
+            return (
+              <div key={note.id} className={note.id === activeNote?.id ? "noteRow active" : "noteRow"}>
+                <button className="notePick" onClick={() => setActiveNoteId(note.id)}>
+                  <strong>{baseName}</strong>
+                  <span>{folder || "Root"}</span>
+                </button>
+                <div className="miniActions">
+                  <button className="iconBtn" onClick={() => handleToggleFavorite(note.id)} title="Favorite">{favorites[note.id] ? "★" : "☆"}</button>
+                  <button className="iconBtn" onClick={() => handleRenameNote(note)} title="Rename" aria-label="Rename">✎</button>
+                  <button className="iconBtn" onClick={() => handleMoveNote(note)} title="Move" aria-label="Move">↪</button>
+                </div>
+              </div>
+            );
+          })}
+        </section>
+
+        <section className="timeline cardSoft">
+          <h3>Recent History</h3>
+          {recentNotes.map((note) => {
+            const { baseName } = splitTitlePath(note.title);
+            return (
+              <button key={note.id} className="timelineRow" onClick={() => setActiveNoteId(note.id)}>
+                <strong>{baseName}</strong>
+                <span>{new Date(note.updatedAt).toLocaleString()}</span>
+              </button>
+            );
+          })}
+        </section>
+      </aside>
+
+      <section className="writePane card">
+        <header className="paneHead">
+          <div>
+            <p className="label">Human Workspace</p>
+            <h2>{activeNote ? splitTitlePath(activeNote.title).baseName : "No note"}</h2>
+          </div>
+          <div className="headActions">
+            <span className="status">{draftState === "dirty" ? "Unsaved" : draftState === "saving" ? "Saving..." : "Saved"}</span>
+            <span className="status">{draftStats.words} words</span>
+            <button className="iconOnly ghost" onClick={() => setViewMode("focus-write")} title="Set as main" aria-label="Set as main">◱</button>
+            <button className="iconOnly ghost" onClick={persistNote} disabled={!activeNote || isPending} title="Save note" aria-label="Save note">✓</button>
+          </div>
+        </header>
+
+        {activeNote ? (
+          <>
+            <input
+              className="titleInput"
+              value={activeNote.title}
+              onChange={(e) => handleNoteFieldChange("title", e.target.value)}
+              onBlur={persistNote}
+            />
+            <textarea
+              className="editor"
+              value={activeNote.content}
+              onChange={(e) => handleNoteFieldChange("content", e.target.value)}
+              onSelect={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                setSelectionContext(target.value.slice(target.selectionStart, target.selectionEnd));
               }}
-            >
-              <strong>{project.name}</strong>
-              <span>{project.description || "No description yet"}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="panelHeader notesHeader">
-          <h2>Notes</h2>
-          <button onClick={handleCreateNote}>New note</button>
-        </div>
-
-        <div className="list">
-          {activeProjectNotes.map((note) => (
-            <button
-              key={note.id}
-              className={note.id === activeNote?.id ? "listItem active" : "listItem"}
-              onClick={() => setActiveNoteId(note.id)}
-            >
-              <strong>{note.title}</strong>
-              <span>{new Date(note.updatedAt).toLocaleString()}</span>
-            </button>
-          ))}
-        </div>
+              onBlur={persistNote}
+              placeholder="Write and edit your note here..."
+            />
+            <div className="assistRail cardSoft">
+              <div>
+                <strong>AI Assist</strong>
+                <p>{selectionContext ? "Selected text ready for AI context." : "Select text to ask targeted questions."}</p>
+              </div>
+              <div className="assistActions">
+                <button className="ghost" onClick={() => {
+                  if (!selectionContext.trim()) return;
+                  setChatInput(`请改写这段内容并说明修改理由：\n\n${selectionContext.trim()}`);
+                  setViewMode("focus-chat");
+                }} disabled={!selectionContext.trim()}>
+                  Ask AI
+                </button>
+                <button className="iconOnly ghost" onClick={() => setViewMode("split")} title="Split view" aria-label="Split view">⫴</button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="empty">Select or create a note.</div>
+        )}
       </section>
 
-      <section className="panel workspacePanel">
-        <div className="panelHeader mainHeader">
+      <section className="chatPane card">
+        <header className="paneHead">
           <div>
-            <p className="eyebrow">Notebook IDE</p>
-            <h2>{activeProject?.name ?? "No project"}</h2>
+            <p className="label">AI Chat</p>
+            <h2>Conversations</h2>
           </div>
-          <div className="statusRow">
-            <span>{status}</span>
-            <button
-              className="secondaryButton"
-              onClick={persistNote}
-              disabled={!activeNote || isPending}
-            >
-              Save note
-            </button>
+          <div className="headActions">
+            <button className="iconOnly ghost" onClick={createSession} title="New chat" aria-label="New chat">＋</button>
+            <button className="iconOnly ghost" onClick={() => setViewMode("focus-chat")} title="Set as main" aria-label="Set as main">◰</button>
+            <button className="iconOnly ghost" onClick={() => setViewMode("split")} title="Split view" aria-label="Split view">⫴</button>
           </div>
-        </div>
+        </header>
 
-        <div className="tabBar" role="tablist" aria-label="Workspace views">
-          <button
-            type="button"
-            className={activeTab === "notes" ? "tabButton active" : "tabButton"}
-            onClick={() => setActiveTab("notes")}
-          >
-            Notes
-          </button>
-          <button
-            type="button"
-            className={activeTab === "chat" ? "tabButton active" : "tabButton"}
-            onClick={() => setActiveTab("chat")}
-          >
-            Chat
-          </button>
-          <button
-            type="button"
-            className={activeTab === "config" ? "tabButton active" : "tabButton"}
-            onClick={() => setActiveTab("config")}
-          >
-            Config
-          </button>
-        </div>
-
-        {activeTab === "notes" ? (
-          <section className="tabView noteView" aria-label="Notes view">
-            {activeNote ? (
-              <>
-                <div className="noteHeader">
-                  <input
-                    className="titleInput"
-                    value={activeNote.title}
-                    onChange={(event) => handleNoteFieldChange("title", event.target.value)}
-                    onBlur={persistNote}
-                    placeholder="Note title"
-                  />
-                  <dl className="draftStats" aria-label="Draft statistics">
-                    <div>
-                      <dt>Words</dt>
-                      <dd>{draftStats.words}</dd>
-                    </div>
-                    <div>
-                      <dt>Chars</dt>
-                      <dd>{draftStats.characters}</dd>
-                    </div>
-                    <div>
-                      <dt>Read</dt>
-                      <dd>{draftStats.readMinutes}m</dd>
-                    </div>
-                  </dl>
-                </div>
-                <textarea
-                  className="noteArea"
-                  value={activeNote.content}
-                  onChange={(event) => handleNoteFieldChange("content", event.target.value)}
-                  onBlur={persistNote}
-                  placeholder="Write your notes here."
-                />
-              </>
-            ) : (
-              <div className="emptyState">Create a note to start drafting.</div>
-            )}
-          </section>
-        ) : null}
-
-        {activeTab === "chat" ? (
-          <section className="tabView chatView" aria-label="Chat view">
-            <div className="chatToolbar">
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={includeNote}
-                  onChange={(event) => setIncludeNote(event.target.checked)}
-                />
-                Include current note
-              </label>
+        <div className="chatLayout">
+          <aside className="sessionList cardSoft">
+            {sessions.map((session) => (
               <button
-                type="button"
-                className="secondaryButton"
-                onClick={() => lastAssistantMessage && insertAssistantReply(lastAssistantMessage.content)}
-                disabled={!lastAssistantMessage || !activeNote}
+                key={session.id}
+                className={activeSessionId === session.id ? "sessionItem active" : "sessionItem"}
+                onClick={() => setActiveSessionId(session.id)}
               >
-                Insert last reply
+                <strong>{session.preview || "New chat"}</strong>
+                <span>{new Date(session.updatedAt).toLocaleString()}</span>
               </button>
-            </div>
+            ))}
+          </aside>
 
-            <div className="promptRail" aria-label="Quick prompts">
+          <section className="chatMain">
+            <div className="chatTools">
+              <label className="toggle">
+                <input type="checkbox" checked={includeNote} onChange={(e) => setIncludeNote(e.target.checked)} />
+                Bind current note context
+              </label>
+                <button className="iconOnly ghost" onClick={() => setShowSettings((v) => !v)} title="Model config" aria-label="Model config">⚙</button>
+              </div>
+
+            <div className="promptRail">
               {quickPrompts.map((prompt) => (
-                <button
-                  key={prompt}
-                  className="promptButton"
-                  type="button"
-                  onClick={() => setChatInput(prompt)}
-                >
-                  {prompt}
-                </button>
+                <button key={prompt} className="promptBtn" onClick={() => setChatInput(prompt)}>{prompt}</button>
               ))}
             </div>
 
-            <div className="chatStream">
+            <div className="stream">
               {activeMessages.length === 0 ? (
-                <div className="emptyState">
-                  Ask for summaries, rewrites, or action items, then insert replies into notes.
-                </div>
+                <div className="empty">Start a new conversation.</div>
               ) : (
                 activeMessages.map((message) => (
                   <article key={message.id} className={`bubble ${message.role}`}>
                     <span>{message.role}</span>
                     <p>{message.content}</p>
-                    {message.role === "assistant" ? (
-                      <button
-                        type="button"
-                        className="inlineAction"
-                        onClick={() => insertAssistantReply(message.content)}
-                        disabled={!activeNote}
-                      >
-                        Insert to note
-                      </button>
-                    ) : null}
+                    {message.role === "assistant" && (
+                      <div className="assistActions">
+                        <button className="iconOnly ghost" onClick={() => insertAssistantReply(message.content, "append")} title="Insert to note" aria-label="Insert to note">↓</button>
+                        <button className="iconOnly ghost" onClick={() => insertAssistantReply(message.content, "replace")} disabled={!selectionContext.trim()} title="Replace selection" aria-label="Replace selection">⇄</button>
+                      </div>
+                    )}
                   </article>
                 ))
               )}
             </div>
 
             <form className="chatForm" onSubmit={handleSendMessage}>
-              <textarea
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                placeholder="Ask OpenAI to rewrite, summarize, or brainstorm."
-              />
-              <button type="submit" disabled={isPending || !chatInput.trim()}>
-                Send
-              </button>
+              <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Message AI..." />
+              <button className="iconOnly" type="submit" disabled={!chatInput.trim() || isPending} title="Send" aria-label="Send">➤</button>
             </form>
-          </section>
-        ) : null}
 
-        {activeTab === "config" ? (
-          <section className="tabView configView" aria-label="Config view">
-            <form className="settingsCard" onSubmit={handleSaveSettings}>
-              <div className="settingsHeader">
-                <h3>Model API</h3>
-                <button type="button" className="secondaryButton" onClick={applyOpenAIDefaults}>
-                  Use OpenAI defaults
-                </button>
-              </div>
-
-              <div className="settingsGrid">
-                <label>
-                  API Key
-                  <input
-                    type="password"
-                    value={settings.apiKey}
-                    onChange={(event) => setSettings({ ...settings, apiKey: event.target.value })}
-                    placeholder="Leave empty to use OPENAI_API_KEY from server env"
-                  />
-                </label>
-                <label>
-                  Model
-                  <select
-                    value={settings.model}
-                    onChange={(event) => setSettings({ ...settings, model: event.target.value })}
-                  >
+            {showSettings && (
+              <form className="settings cardSoft" onSubmit={handleSaveSettings}>
+                <label className="controlLabel">API Key<input type="password" value={settings.apiKey} onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })} /></label>
+                <label className="controlLabel">Model
+                  <select value={settings.model} onChange={(e) => setSettings({ ...settings, model: e.target.value })}>
+                    <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+                    <option value="deepseek-v4-pro">deepseek-v4-pro</option>
                     <option value="gpt-4o-mini">gpt-4o-mini</option>
                     <option value="gpt-4.1-mini">gpt-4.1-mini</option>
                     <option value="gpt-4.1">gpt-4.1</option>
                   </select>
                 </label>
-                <label>
-                  Base URL
-                  <input
-                    value={settings.baseUrl}
-                    onChange={(event) => setSettings({ ...settings, baseUrl: event.target.value })}
-                  />
-                </label>
-              </div>
-
-              <label>
-                System Prompt
-                <textarea
-                  className="promptArea"
-                  value={settings.systemPrompt}
-                  onChange={(event) => setSettings({ ...settings, systemPrompt: event.target.value })}
-                />
-              </label>
-              <button className="secondaryButton" type="submit" disabled={isPending}>
-                Save config
-              </button>
-            </form>
-
-            {activeProject ? (
-              <section className="briefPanel" aria-label="Project brief">
-                <div className="briefHeader">
-                  <h3>Project Context</h3>
-                  <button className="secondaryButton" type="button" onClick={persistProject} disabled={isPending}>
-                    Save context
-                  </button>
-                </div>
-                <div className="briefGrid">
-                  <label>
-                    Logline
-                    <textarea
-                      value={activeProject.logline}
-                      onChange={(event) => handleProjectFieldChange("logline", event.target.value)}
-                      onBlur={persistProject}
-                    />
-                  </label>
-                  <label>
-                    Description
-                    <textarea
-                      value={activeProject.description}
-                      onChange={(event) => handleProjectFieldChange("description", event.target.value)}
-                      onBlur={persistProject}
-                    />
-                  </label>
-                  <label>
-                    Genre
-                    <input
-                      value={activeProject.genre}
-                      onChange={(event) => handleProjectFieldChange("genre", event.target.value)}
-                      onBlur={persistProject}
-                    />
-                  </label>
-                  <label>
-                    Tone
-                    <input
-                      value={activeProject.tone}
-                      onChange={(event) => handleProjectFieldChange("tone", event.target.value)}
-                      onBlur={persistProject}
-                    />
-                  </label>
-                  <label>
-                    Target length
-                    <input
-                      value={activeProject.targetLength}
-                      onChange={(event) => handleProjectFieldChange("targetLength", event.target.value)}
-                      onBlur={persistProject}
-                    />
-                  </label>
-                </div>
-              </section>
-            ) : null}
+                <label className="controlLabel">Base URL<input value={settings.baseUrl} onChange={(e) => setSettings({ ...settings, baseUrl: e.target.value })} /></label>
+                <button className="iconOnly ghost" type="submit" disabled={isPending} title="Save model config" aria-label="Save model config">✓</button>
+              </form>
+            )}
           </section>
-        ) : null}
-
-        <div className="statusFoot">
-          <span>Provider: {settings.provider || "openai-compatible"}</span>
-          <span>Model: {settings.model}</span>
-          <span>{activeProjectNotes.length} notes</span>
-          <span>{activeMessages.length} chat messages</span>
         </div>
       </section>
 
-      <section className="panel mobileConfigHint">
-        <h3>Quick Config</h3>
-        <p>Switch to the Config tab to update OpenAI API settings.</p>
-        <button type="button" onClick={() => setActiveTab("config")}>
-          Open Config Tab
-        </button>
-      </section>
+      <footer className="topStatusBar">
+        <div className="modeSwitcher">
+          <button className={viewMode === "focus-write" ? "iconOnly ghost active" : "iconOnly ghost"} onClick={() => setViewMode("focus-write")} title="Write mode" aria-label="Write mode">✍</button>
+          <button className={viewMode === "split" ? "iconOnly ghost active" : "iconOnly ghost"} onClick={() => setViewMode("split")} title="Split mode" aria-label="Split mode">⫴</button>
+          <button className={viewMode === "focus-chat" ? "iconOnly ghost active" : "iconOnly ghost"} onClick={() => setViewMode("focus-chat")} title="Chat mode" aria-label="Chat mode">◎</button>
+        </div>
+        <span>{status}</span>
+        <span>{activeProject?.name || "No project"}</span>
+      </footer>
     </main>
   );
 }

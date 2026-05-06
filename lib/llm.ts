@@ -41,6 +41,7 @@ async function resolveApiKey(settingsApiKey: string): Promise<string> {
   }
 
   const fromEnv =
+    process.env.DEEPSEEK_API_KEY?.trim() ||
     process.env.OPENAI_API_KEY?.trim() ||
     process.env.CODEX_OPENAI_API_KEY?.trim() ||
     process.env.OPENAI_KEY?.trim() ||
@@ -52,16 +53,33 @@ async function resolveApiKey(settingsApiKey: string): Promise<string> {
   return (await readCodexApiKey()) ?? "";
 }
 
+function resolveBaseUrl(settingsBaseUrl: string): string {
+  const raw = settingsBaseUrl.trim() || process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1";
+  if (!raw) {
+    return "https://api.openai.com/v1";
+  }
+
+  try {
+    const url = new URL(raw);
+    if (url.hostname === "api.deepseek.com" && (url.pathname === "" || url.pathname === "/")) {
+      return "https://api.deepseek.com/v1";
+    }
+  } catch {
+    return raw;
+  }
+
+  return raw;
+}
+
 export async function generateAssistantReply(input: ChatRequestInput) {
   const { settings, project, note, history, message, includeNote } = input;
   const apiKey = await resolveApiKey(settings.apiKey);
-  const baseUrl =
-    settings.baseUrl.trim() || process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1";
+  const baseUrl = resolveBaseUrl(settings.baseUrl);
 
   if (!apiKey) {
     return {
       content:
-        "Missing API key. Set it in Config, or provide OPENAI_API_KEY (or CODEX_OPENAI_API_KEY) in the server environment."
+        "Missing API key. Set it in Config, or provide DEEPSEEK_API_KEY / OPENAI_API_KEY (or CODEX_OPENAI_API_KEY) in the server environment."
     };
   }
 
@@ -87,26 +105,30 @@ export async function generateAssistantReply(input: ChatRequestInput) {
     baseURL: baseUrl
   });
 
-  const response = await client.responses.create({
+  const response = await client.chat.completions.create({
     model: settings.model,
-    instructions: promptParts.join("\n\n"),
-    input: [
+    temperature: 0.8,
+    messages: [
+      {
+        role: "system",
+        content: promptParts.join("\n\n")
+      },
       ...history.slice(-8).map((item) => ({
-        type: "message" as const,
         role: item.role === "assistant" ? ("assistant" as const) : ("user" as const),
-        content: [{ type: "input_text" as const, text: item.content }]
+        content: item.content
       })),
       {
-        type: "message" as const,
-        role: "user" as const,
-        content: [{ type: "input_text" as const, text: message }]
+        role: "user",
+        content: message
       }
-    ],
-    temperature: 0.8
+    ]
   });
+
+  const content = response.choices?.[0]?.message?.content;
+  const text = typeof content === "string" ? content : "";
 
   return {
     id: randomUUID(),
-    content: response.output_text?.trim() || "The model returned an empty response."
+    content: text.trim() || "The model returned an empty response."
   };
 }

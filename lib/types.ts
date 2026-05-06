@@ -14,6 +14,7 @@ export type Note = {
   projectId: string;
   title: string;
   content: string;
+  structuredSections: StructuredSections;
   updatedAt: string;
 };
 
@@ -21,9 +22,21 @@ export type ChatMessage = {
   id: string;
   projectId: string | null;
   noteId: string | null;
+  sessionId: string | null;
+  source: "human" | "model" | "agent" | "system";
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
+};
+
+export type StructuredSections = {
+  scene: string;
+  characters: string;
+  objective: string;
+  conflict: string;
+  beats: string;
+  dialogueNotes: string;
+  revisionTasks: string;
 };
 
 export type AppSettings = {

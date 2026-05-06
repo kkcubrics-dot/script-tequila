@@ -1,313 +1,227 @@
 # Script Tequila PRD
 
-## Product Summary
+## 1) 用户原始需求
 
-Script Tequila is a local-first screenplay development workspace for writers who want one place to keep project context, scene notes, and AI-assisted rewrites. The product should feel like a focused writing desk, not a generic chatbot.
+### 1.1 核心使用方式
 
-## Problem
+用户希望这个软件形成一条完整且低摩擦的创作链路：
 
-Screenwriting work is fragmented across notes, outlines, chat transcripts, and model settings. Writers need AI assistance that understands the current project and note without forcing them to repeatedly paste context.
+- 无缝的模型聊天体验：用户在同一工作区内连续对话，不需要反复粘贴上下文。
+- 结构化整理到笔记区：模型输出不仅是聊天文本，还应自动整理为便于人类查看和复用的结构化笔记。
+- 人类可结构化输入：用户可以直接在笔记区按结构输入（如场景、角色、冲突、节拍、对白意图），并被模型理解和利用。
+- 多平台可访问：除桌面 Web 外，支持 iOS 与 Agent 入口（Hermes / OpenOpenClaw Agent）访问同一工作流能力。
 
-## Target Users
+### 1.2 用户要解决的真实问题
 
-- Solo screenwriters developing premises, scenes, and dialogue passes.
-- Small writing teams that need a lightweight local prototype before adopting hosted collaboration.
-- Producers or script editors doing quick beat, pacing, and character feedback passes.
-
-## Goals
-
-- Let a writer create projects and notes quickly.
-- Keep high-level project context attached to every AI request.
-- Show immediate drafting signals such as word count and estimated read time.
-- Provide reusable screenplay-specific prompts for common tasks.
-- Persist all project, note, settings, and chat state locally.
-
-## Non-Goals
-
-- Real-time collaboration.
-- Full screenplay formatting and pagination.
-- Cloud sync, auth, billing, or account management.
-- 同时深度集成多个 Vendor Agent SDK（先聚焦 OpenAI 一条主链路）。
-
-## MVP Scope
-
-### Project Workspace
-
-- User can create and switch projects.
-- User can edit a project brief with logline, genre, tone, and target length.
-- Project brief is saved locally and included in AI context.
-
-### Notes
-
-- User can create and switch notes within the active project.
-- User can edit title and body content.
-- Note changes can be saved manually and on blur.
-- Workspace shows word count, character count, and estimated read time.
-
-### AI Copilot
-
-- User can chat with an OpenAI-compatible model.
-- User can choose whether to include the current note in context.
-- User can trigger preset requests for rewrite, beat analysis, dialogue polish, and stakes/tension.
-- User receives a clear missing-key message when credentials are absent.
-
-### Settings
-
-- User can set provider label, model, base URL, API key, and system prompt.
-- Settings persist to local JSON storage.
-
-## UX Principles
-
-- The first screen is the working app, not a landing page.
-- The editor remains the visual center of gravity.
-- Controls should be compact, predictable, and specific to writing workflows.
-- System state should be visible through short status text.
-
-## Success Metrics
-
-- A new user can create a project, write a note, save it, and ask for AI feedback in under two minutes.
-- The app can be used without an API key for local drafting.
-- Type checking and production build pass.
-
-## Technical Architecture (OpenAI-first)
-
-### System Boundaries
-
-- **Frontend (Next.js / React):** Editing, project/note management, chat UI, status display.
-- **Backend API Routes:** Context assembly, model invocation, persistence orchestration, error mapping.
-- **Storage (local JSON):** `projects`, `notes`, `messages`, `settings` in `data/app.json`.
-- **Model Layer:** OpenAI SDK as the default execution path.
-
-### Layered Design
-
-- **UI Layer:** `components/workspace.tsx` only handles interaction and rendering.
-- **Route Layer:** `app/api/*/route.ts` validates input and returns stable JSON contracts.
-- **Domain/Adapter Layer:** `lib/llm.ts` (current) and future `lib/agents/*` adapters.
-- **Store Layer:** `lib/store.ts` as single persistence access point.
-
-### Runtime Flow (Chat)
-
-1. User submits message in Chat panel.
-2. `POST /api/chat` loads `project`, `note`, `history`, `settings`.
-3. Model context is assembled: `systemPrompt + project brief + optional note + recent history`.
-4. OpenAI SDK `responses.create` executes generation.
-5. User + assistant messages are persisted.
-6. Route returns normalized response/error to frontend.
-
-### API Contract Principles
-
-- Response success shape remains stable: `{ userMessage, assistantMessage }`.
-- Response error shape统一为: `{ error: { code, message } }`.
-- Model/provider-specific details must not leak to UI state structure.
-
-### Extensibility Rules
-
-- Keep one active default path: `OpenAI SDK`.
-- All future providers/agents must implement a shared adapter interface.
-- UI switches adapters by config; message persistence format remains unchanged.
-
-## Delivery Plan (OpenAI SDK Track)
-
-### Stage A: Core Stabilization (Now)
-
-- [x] Switch model call to OpenAI SDK (Responses API).
-- [x] Keep existing context strategy and key fallback logic.
-- [ ] Standardize `/api/chat` structured error format (`code`, `message`).
-- [ ] Add request validation for required fields (`message`, `projectId/noteId` nullable handling).
-- [ ] Add minimal observability logs (request id, provider/model, duration, status).
-
-### Stage B: UX Reliability
-
-- [ ] Frontend `postJson` parses structured error and shows friendly status text.
-- [ ] Add pending/timeout states in chat send flow.
-- [ ] Add lightweight retry affordance for transient model errors (429/5xx).
-
-### Stage C: Adapter Preparation
-
-- [ ] Extract `SimpleChatAdapter` from current `lib/llm.ts`.
-- [ ] Add `AgentAdapter` and `AgentEvent` types in `lib/agents/types.ts`.
-- [ ] Route-level adapter selection by settings (default: `simple-openai`).
-- [ ] Keep persistence schema unchanged during refactor.
-
-### Stage D: OpenAI Agent Mode (After Confirmation)
-
-- [ ] Add `OpenAIAgentAdapter` with streaming events.
-- [ ] Support event rendering in chat panel (`text/tool_call/error/done`).
-- [ ] Add “Insert to Note” modes: append / replace selection.
-- [ ] Persist session-level metadata for replay.
-
-## Milestone Acceptance Checklist
-
-- [ ] `npm run typecheck` passes.
-- [ ] `npm run build` passes.
-- [ ] Core chat works with OpenAI key in Config.
-- [ ] Missing/invalid key returns clear structured error.
-- [ ] Existing local data remains readable without migration.
-- [ ] No breaking change in current UI interaction path.
-
-## Risks and Mitigations
-
-- **Risk:** Third-party OpenAI-compatible gateways partially implement Responses API.
-  - **Mitigation:** Keep `baseUrl` configurable; fall back to `chat.completions` adapter if required.
-- **Risk:** Error payload inconsistencies degrade UX.
-  - **Mitigation:** Centralize server error mapping before returning to frontend.
-- **Risk:** Agent mode introduces schema churn.
-  - **Mitigation:** Freeze `AppState` message structure until Stage D is validated.
-
-## Implementation Plan (Completed)
-
-1. ✅ Extend the project model with screenplay brief fields.
-2. ✅ Add backward-compatible state normalization for existing JSON data.
-3. ✅ Add editable project brief controls to the workspace.
-4. ✅ Add draft metrics derived from the active note.
-5. ✅ Add quick prompt buttons that fill the chat composer.
-6. ✅ Refresh visual styling for a more focused writing interface.
-7. ✅ Verify with `npm run typecheck` and `npm run build`.
-
-## Roadmap (Phased Iteration)
-
-> 整体策略：先修地基，再提体验，最后上 Agent 能力。每阶段完成后验证 typedcheck + build 通过，再进入下一阶段。
-
----
-
-### Phase 0: OpenAI Agent SDK Core (Now)
-
-**目标：** 用 OpenAI 官方 SDK 替换当前手写 HTTP 调用，建立后续 Agent 化的最小闭环，不破坏现有写作工作流。
-
-- [ ] **后端调用切换**
-  - `lib/llm.ts` 改为 OpenAI SDK 调用（优先 Responses API）
-  - 保持现有上下文注入策略（system prompt + project brief + optional note + recent history）
-  - 保持 API key 解析优先级（Config -> env -> `~/.codex/auth.json`）
-- [ ] **配置兼容**
-  - 保留 `model` / `baseUrl` / `apiKey` 字段
-  - `baseUrl` 默认 `https://api.openai.com/v1`，允许兼容代理网关
-- [ ] **错误与可观察性**
-  - 标准化模型错误消息（认证失败、限流、空响应）
-  - API Route 输出结构化错误（`code` + `message`）
-- [ ] **不在本阶段实现**
-  - 不做多 provider 路由
-  - 不做工具调用（function calling）UI
-  - 不做多步 agent orchestration
-
-**验收标准（DoD）**
-
-- [ ] 聊天主流程可用：输入消息后稳定返回 assistant 回复
-- [ ] 缺 key 时有明确提示
-- [ ] `npm run typecheck` 和 `npm run build` 通过
-- [ ] 不修改现有数据结构（`AppState` 向后兼容）
-
----
-
-### Phase 1: 架构加固 (Architecture Hardening)
-
-**目标：** 解决 MVP 遗留的技术债，为后续功能提供稳定基础。
-
-- [ ] **错误处理增强**
-  - API Route 统一异常捕获与结构化错误响应
-  - 前端 fetch 调用统一错误处理/重试逻辑
-  - React Error Boundary 包裹 Workspace，防止整页白屏
-- [ ] **状态管理升级**
-  - 引入轻量状态库（zustand）替代分散的 useState + 手动 fetch 模式
-  - 将 API 调用逻辑抽离出组件，放入独立 hooks 或 services 层
-- [ ] **API 认证改进**
-  - 后端代理 API 调用，前端不直接暴露 API Key
-  - API Key 仅在服务端存储和使用
-- [ ] **构建与 CI**
-  - 补充 `next build` 验证
-  - 添加 ESLint 规则补充
-- [ ] **样式体系**
-  - 引入 CSS Modules 或 Tailwind，替代全局 CSS
-  - 响应式布局基础支持
-- [ ] **持久化升级 (可选)**
-  - 评估 SQLite (better-sqlite3) 替代 JSON 文件，支持并发读写和增量更新
-
----
-
-### Phase 2: 体验优化 (Note & Chat History)
-
-**目标：** 解决版本恢复和会话管理两个核心痛点。
-
-- [ ] **笔记版本历史 (Note History)**
-  - 每次保存生成版本快照（noteId, version, content, savedAt）
-  - 版本列表 UI（时间线视图）
-  - 一键回滚到指定版本
-  - 向后兼容的数据迁移策略
-- [ ] **会话历史 (Chat Session History)**
-  - 以 sessionId 为单位组织消息，不同写作轮次隔离
-  - 历史会话列表 + 恢复上下文继续对话
-  - 会话级元数据（标题、创建时间、关联项目/笔记）
-- [ ] **UI 细节打磨**
-  - 笔记保存状态指示器（已保存/未保存/保存中）
-  - 聊天加载态（streaming 响应指示器）
-  - 键盘快捷键（Ctrl+S 保存，Tab 切换面板）
-
----
-
-### Phase 3: Agent 架构升级
-
-**目标：** 从单次模型调用升级为可切换的 Agent 工作流，支持多步规划、工具调用和外部编码 Agent 编排。
-
-#### 3.1 Agent Harness 抽象层
-
-- [ ] 定义 `AgentAdapter` 接口：
-
-```
-interface AgentAdapter {
-  execute(input: AgentInput): AsyncIterable<AgentEvent>;
-}
-
-type AgentInput = {
-  systemPrompt: string;
-  messages: ChatMessage[];
-  tools?: ToolDefinition[];
-  projectContext?: Project;
-  noteContext?: Note;
-};
-
-type AgentEvent =
-  | { type: "text"; content: string }
-  | { type: "tool_call"; name: string; args: any; result?: any }
-  | { type: "error"; message: string }
-  | { type: "done" };
-```
-
-- [ ] 实现 `SimpleChatAdapter`（当前单次调用行为的封装）
-- [ ] 前端 Chat 面板支持按 adapter 类型切换（Simple / Agent）
-- [ ] Agent 模式下支持 streaming 响应
-
-#### 3.2 OpenAI Agent 深化 (Agent 模式)
-
-- [ ] 新增 `OpenAIAgentAdapter`（多步执行 + tools + streaming）
-- [ ] 工具调用事件结构落库（可回放）
-- [ ] Chat 面板展示中间事件（thinking/tool/result）
-- [ ] 一键将 agent 输出插入当前 Note（append / replace 两种模式）
-
-#### 3.3 Codex 集成 (Agent 模式)
-
-- [ ] 新增 `CodexAgentAdapter` — 通过 Hermes Shell 调用 Codex CLI
-- [ ] 提供两种 Codex 调用模式：
-  - **exec 模式：** 给 Codex 一个一次性任务（"重写这段场景"），返回结果后注入当前 Note
-  - **会话模式：** 启动后台 Codex 进程，消息转发到 Codex，持续对话
-- [ ] 指令面板新增 "Send to Codex" 按钮，将当前上下文发给 Codex 执行
-- [ ] Codex 执行结果回写到 Chat 消息流，可一键 Insert to Note
-
-#### 3.4 Claude Code 集成 (备选 Agent)
-
-- [ ] 新增 `ClaudeAgentAdapter` — 通过 Hermes Shell 调用 Claude Code CLI
-- [ ] 与 Codex 共用统一的 AgentAdapter 接口
-- [ ] Config 页面增加 Agent 选择（Simple / OpenAI Agent / Codex / Claude）
-
-#### 3.5 本地模型支持 (可选)
-
-- [ ] 通过 llama.cpp / Ollama 提供本地推理选项
-- [ ] Config 页增加 Provider Type 切换（Remote / Local）
-
----
-
-### Phase 4: 创意扩展 (Backlog)
-
-- [ ] **AI 生图辅助工具** — 基于选定画板区域生成提示词
-  - Reference: http://xhslink.com/o/3mtx6ydKvRC
-- [ ] **剧本格式化预览** — 标准 screenplay 格式渲染
-- [ ] **导出功能** — Markdown / Fountain / PDF 导出
-- [ ] **多笔记对比** — 并排对比不同版本或不同笔记
+- 创作上下文分散在聊天、文档、临时想法中，导致重复描述、信息丢失。
+- 模型回答可读性不足，难以沉淀成可维护的创作资产。
+- 只有自然语言聊天，不足以支撑长期项目的结构化推进。
+- 不同终端和 Agent 通道体验割裂，无法稳定复用同一项目上下文。
+
+### 1.3 目标用户
+
+- 独立编剧：需要快速从想法到场景草稿再到润色。
+- 小型编剧协作团队：需要先以轻量本地方案验证流程。
+- 制片/剧本编辑：需要高效做节拍、人物弧线、对白和张力检查。
+
+### 1.4 成功标准（产品层）
+
+- 用户可在 2 分钟内完成：创建项目 -> 输入结构化笔记 -> 发起 AI 对话 -> 回填结果到笔记。
+- 聊天结果可一键或自动沉淀到结构化笔记，且可被后续轮次稳定引用。
+- 在桌面端与 iOS / Agent 入口上，核心链路一致可用。
+
+## 2) 技术实现方案
+
+### 2.1 产品能力拆解
+
+- 能力 A：上下文感知聊天（Contextual Chat）
+  - 上下文来源：`system prompt + project brief + active note + recent history`。
+  - 聊天应支持连续会话、状态可见、错误可恢复。
+
+- 能力 B：结构化笔记编排（Structured Notes）
+  - 定义统一笔记结构（建议）：
+    - `scene`
+    - `characters`
+    - `objective`
+    - `conflict`
+    - `beats`
+    - `dialogue_notes`
+    - `revision_tasks`
+  - 模型输出可映射到上述结构，并支持 append/replace 指定区块。
+
+- 能力 C：人类结构化输入（Human-in-the-loop）
+  - 在笔记区提供结构化编辑入口（表单 + 富文本混合）。
+  - 人类输入优先级高于模型自动总结；所有变更可追溯。
+
+- 能力 D：多平台接入（Web / iOS / Agent）
+  - Web 为主工作台。
+  - iOS 与 Agent 入口复用同一后端契约（而非复制业务逻辑）。
+  - Hermes / OpenOpenClaw Agent 通过统一 API 访问项目、笔记和会话能力。
+
+### 2.2 系统架构（OpenAI-first，Adapter-ready）
+
+- 前端层：`Next.js/React` 工作台，负责编辑、展示、交互。
+- API 层：`app/api/*` 统一输入校验、鉴权、错误结构化、编排领域服务。
+- 领域层：
+  - `ChatService`：模型请求与上下文组装
+  - `NoteStructService`：结构化提取、区块写入策略
+  - `SessionService`：会话状态与历史管理
+- 模型层：默认 `OpenAI SDK`，未来通过 Adapter 扩展。
+- 存储层：当前 `data/app.json`，后续可升级 SQLite。
+
+### 2.3 关键 API 约定（建议）
+
+- `POST /api/chat`
+  - 输入：`projectId`, `noteId`, `message`, `includeNote`, `sessionId`
+  - 输出：`{ userMessage, assistantMessage, structuredPatch? }`
+
+- `POST /api/notes/:id/structure`
+  - 输入：`mode: append|replace`, `sections`
+  - 输出：`{ note, updatedSections }`
+
+- `POST /api/agents/execute`
+  - 用于 Hermes / OpenOpenClaw Agent 入口
+  - 复用 chat 与结构化写入能力，返回统一事件流或标准响应
+
+- 错误返回统一：`{ error: { code, message } }`
+
+### 2.4 数据模型演进
+
+- `Project`: 保留 brief 字段（logline/genre/tone/targetLength）
+- `Note`: 新增 `structuredSections`（JSON）与 `updatedAt`
+- `Message`: 增加 `sessionId`、`source`（human/model/agent）
+- `Session`: 新实体，管理多轮会话元数据
+
+### 2.5 非目标（当前阶段）
+
+- 不做实时多人协同编辑。
+- 不做完整版剧本排版和分页系统。
+- 不在当前阶段做复杂多 Agent 编排 UI。
+
+### 2.6 多端同步存储方案（Web / iOS / Agent）
+
+- 同步策略：采用“服务端权威 + 客户端缓存”模式。
+- 存储分层：
+  - `Local Cache`（端侧）：用于离线浏览和草稿暂存。
+  - `Sync Store`（服务端）：作为唯一真相源，统一项目/笔记/会话状态。
+- 数据同步单位：
+  - `Project`
+  - `Note`（含 `structuredSections`）
+  - `Session`
+  - `Message`
+- 写入规则：
+  - 所有跨端写操作走 API，由服务端生成递增 `version` 与 `updatedAt`。
+  - 客户端提交时带 `baseVersion`，服务端做冲突检测。
+- 冲突策略（MVP）：
+  - 不同 section 并行编辑：按 section 粒度合并。
+  - 同 section 冲突：保留服务端版本并生成冲突副本，提示用户选择。
+- 增量同步：
+  - 客户端按 `sinceVersion` 拉取变更（delta sync）。
+  - 支持幂等写入（`requestId` 防重复提交）。
+- 一致性与性能目标（MVP）：
+  - 读一致：同一 `sessionId` 在多端可追平到一致状态。
+  - 写可见性：端 A 写入后，端 B 在目标时延内可见（建议 <= 3 秒）。
+  - 失败恢复：断网恢复后可继续增量同步，不丢本地草稿。
+
+### 2.7 域名与线上部署方案（Web 至少可访问）
+
+- 目标：让 Web 版本可通过公网域名访问，支持真实用户试用与验收。
+- 基础方案（MVP）：
+  - 托管：Vercel（优先）或自建 Linux + Nginx。
+  - 域名：购买主域名后配置 `app.<your-domain>` 指向 Web 服务。
+  - TLS：开启 HTTPS（自动证书或 Let's Encrypt）。
+- 环境规划：
+  - `dev`：本地开发。
+  - `staging`：预发布环境（给测试和验收用）。
+  - `prod`：生产环境（外部访问）。
+- 配置与密钥：
+  - API key 仅放服务端环境变量，不进入前端 bundle。
+  - 区分 `staging/prod` 的模型配置与日志级别。
+- 发布流程：
+  - `main` 分支触发生产部署。
+  - Pull Request 触发预览部署（可选）。
+- 线上可用性最低标准：
+  - 首页与核心工作台可访问。
+  - 聊天与笔记保存可用。
+  - 关键错误有可读提示（鉴权/限流/超时）。
+
+## 3) 未来计划
+
+### 3.1 Phase 0（当前到近期）：打通核心链路
+
+- 完成 OpenAI SDK 主链路稳定化。
+- 聊天返回支持 `structuredPatch`，可写入笔记结构区。
+- API 错误格式统一为 `code + message`。
+- 完成最小可用的人类结构化输入界面。
+
+验收：
+
+- 聊天、结构化写入、人类结构化编辑三者可闭环。
+- `npm run typecheck`、`npm run build` 通过。
+
+### 3.2 Phase 1：体验与可靠性
+
+- 会话管理（session 维度历史、恢复继续）。
+- 笔记区块级版本历史与回滚。
+- 聊天发送态、超时态、重试机制完善。
+- 增加可观察性日志：`requestId`, `model`, `duration`, `status`。
+- 完成 staging 环境部署，提供固定访问 URL 给测试。
+
+### 3.3 Phase 2：多平台能力落地
+
+- 生产环境部署 + 域名接入（`app.<your-domain>`）。
+- 建立基础运维项：HTTPS、健康检查、错误告警、备份策略。
+- iOS 客户端接入统一 API（先覆盖核心链路）。
+- Hermes / OpenOpenClaw Agent 接入 `agents/execute` 契约。
+- 跨端一致性策略：同一 `project/note/session` 在不同入口可连续工作。
+
+### 3.4 Phase 3：Agent 深化
+
+- 引入 `AgentAdapter` 抽象（保持 UI 与存储结构稳定）。
+- 支持事件流渲染（text/tool_call/error/done）。
+- 支持“插入笔记”高级模式（append/replace selection/section-targeted）。
+
+### 3.5 风险与缓解
+
+- 风险：不同网关对 Responses API 支持不一致。
+  - 缓解：保留 `baseUrl` 配置与 fallback adapter。
+- 风险：结构化抽取质量不稳定，污染笔记。
+  - 缓解：人类确认写入、区块级回滚、保留原始响应。
+- 风险：多端接入导致契约漂移。
+  - 缓解：先冻结 API schema，再分端接入并做契约测试。
+- 风险：线上环境与本地行为不一致导致可用性问题。
+  - 缓解：先 staging 后 prod，发布前执行核心 user case 回归测试。
+
+## 4) 精简 User Cases（丝滑体验验收）
+
+### UC-01 首次闭环（Onboarding）
+
+- 场景：新用户在 2 分钟内完成“建项目 -> 写结构化笔记 -> 发起聊天 -> 回填笔记”。
+- 关键验收：
+  - 全流程 <= 120 秒。
+  - 无需重复粘贴长上下文。
+  - 回填后笔记立即可编辑。
+
+### UC-02 连续对话与上下文继承
+
+- 场景：用户连续 3 轮提出不同改写约束，系统自动继承上下文。
+- 关键验收：
+  - 每轮保持同一 `sessionId`。
+  - 无需重新提供完整背景。
+  - 输入框与状态提示持续可用，无明显卡顿。
+
+### UC-03 结构化沉淀与人工覆盖
+
+- 场景：模型回复写入 `structuredSections` 后，用户手动修订并继续对话。
+- 关键验收：
+  - 支持 `append/replace section`。
+  - 人工修改优先级高于模型旧结论。
+  - section 级可追溯、可回滚。
+
+### UC-04 跨端连续与异常恢复
+
+- 场景：Web -> iOS -> Agent 连续创作，期间发生一次网络或鉴权异常。
+- 关键验收：
+  - 跨端读取同一 `project/note/session`。
+  - 同步后结构字段一致。
+  - 异常时有可操作错误提示，重试后会话不断裂。

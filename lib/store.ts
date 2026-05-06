@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { AppSettings, AppState, ChatMessage, Note, Project } from "@/lib/types";
+import { AppSettings, AppState, ChatMessage, Note, Project, StructuredSections } from "@/lib/types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "app.json");
@@ -41,6 +41,7 @@ const defaultState = (): AppState => {
         title: "Story Premise",
         content:
           "A washed-up magician is forced to help his estranged daughter solve a disappearance in a desert casino town.",
+        structuredSections: defaultStructuredSections(),
         updatedAt: now
       }
     ],
@@ -97,11 +98,13 @@ export async function upsertProject(input: Partial<Project> & Pick<Project, "nam
 
 export async function upsertNote(input: Partial<Note> & Pick<Note, "projectId" | "title" | "content">) {
   const state = await readState();
+  const existing = input.id ? state.notes.find((item) => item.id === input.id) : null;
   const note: Note = {
     id: input.id ?? randomUUID(),
     projectId: input.projectId,
     title: input.title,
     content: input.content,
+    structuredSections: input.structuredSections ?? existing?.structuredSections ?? defaultStructuredSections(),
     updatedAt: new Date().toISOString()
   };
 
@@ -144,11 +147,33 @@ function normalizeState(input: Partial<AppState>): AppState {
       targetLength: project.targetLength ?? "",
       createdAt: project.createdAt
     })),
-    notes: input.notes ?? fallback.notes,
-    messages: input.messages ?? fallback.messages,
+    notes: (input.notes ?? fallback.notes).map((note) => ({
+      ...note,
+      structuredSections: {
+        ...defaultStructuredSections(),
+        ...(note.structuredSections ?? {})
+      }
+    })),
+    messages: (input.messages ?? fallback.messages).map((message) => ({
+      ...message,
+      sessionId: message.sessionId ?? null,
+      source: message.source ?? (message.role === "assistant" ? "model" : "human")
+    })),
     settings: {
       ...fallback.settings,
       ...input.settings
     }
+  };
+}
+
+function defaultStructuredSections(): StructuredSections {
+  return {
+    scene: "",
+    characters: "",
+    objective: "",
+    conflict: "",
+    beats: "",
+    dialogueNotes: "",
+    revisionTasks: ""
   };
 }
