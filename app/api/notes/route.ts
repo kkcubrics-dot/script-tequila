@@ -9,9 +9,11 @@ export async function POST(request: NextRequest) {
     await requireAuthedUser();
     const body = (await request.json()) as {
       id?: string;
-      projectId: string;
+      folderId?: string | null;
+      folder: string;
       title: string;
       content: string;
+      createdAt?: string;
     };
     const note = await saveNote(body);
     return ok(note);

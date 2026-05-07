@@ -1,28 +1,21 @@
+import { useMemo, useState } from "react";
 import { Note } from "@/lib/types";
-import { IconEdit, IconFolder, IconMove, IconPlus, IconStar } from "@/components/ui/icons";
+import { IconEdit, IconFolder, IconMove, IconStar } from "@/components/ui/icons";
 
-type TreeFolder = { path: string; name: string; depth: number };
 type Session = { id: string; updatedAt: string; preview: string; count: number };
 
 type SidebarPaneProps = {
   isChatLayout: boolean;
-  projects: Array<{ id: string; name: string }>;
-  activeProjectId: string;
-  setActiveProjectId: (id: string) => void;
-  noteSearch: string;
-  setNoteSearch: (v: string) => void;
   selectedFolder: string;
   setSelectedFolder: (v: string) => void;
-  folders: TreeFolder[];
-  filteredNotes: Note[];
+  notes: Note[];
+  folders: string[];
   activeNoteId?: string;
   favorites: Record<string, true>;
   sessions: Session[];
   activeSessionId: string | null;
   setActiveSessionId: (id: string) => void;
-  splitTitlePath: (title: string) => { folder: string; baseName: string };
-  onCreateProject: () => void;
-  onCreateFolder: () => void;
+  onCreateFolder: (name: string) => void;
   onCreateNote: () => void;
   onToggleFavorite: (id: string) => void;
   onRenameNote: (note: Note) => void;
@@ -32,20 +25,84 @@ type SidebarPaneProps = {
 
 export function SidebarPane(props: SidebarPaneProps) {
   const {
-    isChatLayout, projects, activeProjectId, setActiveProjectId, noteSearch, setNoteSearch,
-    selectedFolder, setSelectedFolder, folders, filteredNotes, activeNoteId, favorites,
-    sessions, activeSessionId, setActiveSessionId, splitTitlePath,
-    onCreateProject, onCreateFolder, onCreateNote, onToggleFavorite, onRenameNote, onMoveNote, onSelectNote
+    isChatLayout,
+    selectedFolder,
+    setSelectedFolder,
+    notes,
+    folders,
+    activeNoteId,
+    favorites,
+    sessions,
+    activeSessionId,
+    setActiveSessionId,
+    onCreateFolder,
+    onCreateNote,
+    onToggleFavorite,
+    onRenameNote,
+    onMoveNote,
+    onSelectNote
   } = props;
+
+  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, true>>({});
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [pendingFolderName, setPendingFolderName] = useState("");
+
+  const folderNames = useMemo(() => {
+    const set = new Set<string>();
+    folders.forEach((folder) => {
+      if (folder.trim()) set.add(folder.trim());
+    });
+    notes.forEach((note) => {
+      const folder = note.folder.trim();
+      if (folder) set.add(folder);
+    });
+    return Array.from(set);
+  }, [folders, notes]);
+
+  const notesByFolder = useMemo(() => {
+    const map = new Map<string, Note[]>();
+    notes.forEach((note) => {
+      const key = note.folder.trim();
+      const list = map.get(key) ?? [];
+      list.push(note);
+      map.set(key, list);
+    });
+    map.forEach((list) => list.sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)));
+    return map;
+  }, [notes]);
+
+  function commitCreateFolder() {
+    const name = pendingFolderName.trim().replace(/^\/+|\/+$/g, "");
+    if (!name) {
+      setCreatingFolder(false);
+      setPendingFolderName("");
+      return;
+    }
+    onCreateFolder(name);
+    setCreatingFolder(false);
+    setPendingFolderName("");
+  }
+
+  function renderNoteRow(note: Note, left: number) {
+    return (
+      <div key={note.id} className={note.id === activeNoteId ? "noteRow active" : "noteRow"} style={{ marginLeft: `${left}px` }}>
+        <button className="notePick" onClick={() => onSelectNote(note.id)}><strong>{note.title}</strong></button>
+        <div className="miniActions">
+          <button className={`iconBtn ${favorites[note.id] ? "activeStar" : ""}`} onClick={() => onToggleFavorite(note.id)} title="Favorite"><IconStar width={13} height={13} /></button>
+          <button className="iconBtn" onClick={() => onRenameNote(note)} title="Rename" aria-label="Rename"><IconEdit width={13} height={13} /></button>
+          <button className="iconBtn" onClick={() => onMoveNote(note)} title="Move" aria-label="Move"><IconMove width={13} height={13} /></button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <aside className="sidebar card">
       <header className="sidebarHead">
         <div>
-          <p className="label">Script Tequila</p>
-          <h1>{isChatLayout ? "Chat History" : "Project Tree"}</h1>
+          <p className="label">{isChatLayout ? "Conversations" : "Folder Tree"}</p>
+          <h1>{isChatLayout ? "Recent Chats" : "Notes"}</h1>
         </div>
-        {!isChatLayout && <button className="iconOnly" onClick={onCreateProject} title="New project" aria-label="New project"><IconPlus width={15} height={15} /></button>}
       </header>
 
       {isChatLayout ? (
@@ -59,43 +116,60 @@ export function SidebarPane(props: SidebarPaneProps) {
         </section>
       ) : (
         <>
-          <section className="projectSwitch">
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                className={project.id === activeProjectId ? "projectChip active" : "projectChip"}
-                onClick={() => setActiveProjectId(project.id)}
-              >
-                {project.name}
-              </button>
-            ))}
-          </section>
-
           <div className="treeActions">
-            <button className="iconOnly ghost" onClick={onCreateFolder} title="New folder" aria-label="New folder"><IconFolder width={15} height={15} /></button>
+            <button className="iconOnly ghost" onClick={() => { setCreatingFolder(true); setPendingFolderName(""); }} title="New folder" aria-label="New folder"><IconFolder width={15} height={15} /></button>
             <button className="iconOnly ghost" onClick={onCreateNote} title="New note" aria-label="New note"><IconEdit width={15} height={15} /></button>
           </div>
 
-          <input value={noteSearch} onChange={(e) => setNoteSearch(e.target.value)} placeholder="Search notes..." />
-
           <section className="tree cardSoft">
-            <button className={selectedFolder === "" ? "treeRow active" : "treeRow"} onClick={() => setSelectedFolder("")}>All Notes</button>
-            {folders.map((folder) => (
-              <button key={folder.path} className={selectedFolder === folder.path ? "treeRow active" : "treeRow"} onClick={() => setSelectedFolder(folder.path)} style={{ paddingLeft: `${12 + folder.depth * 14}px` }}>{folder.name}</button>
-            ))}
-            {filteredNotes.map((note) => {
-              const { baseName, folder } = splitTitlePath(note.title);
+            {folderNames.map((folderName) => {
+              const isCollapsed = !!collapsedFolders[folderName];
+              const folderNotes = isCollapsed ? [] : (notesByFolder.get(folderName) ?? []);
               return (
-                <div key={note.id} className={note.id === activeNoteId ? "noteRow active" : "noteRow"}>
-                  <button className="notePick" onClick={() => onSelectNote(note.id)}><strong>{baseName}</strong><span>{folder || "Root"}</span></button>
-                  <div className="miniActions">
-                    <button className={`iconBtn ${favorites[note.id] ? "activeStar" : ""}`} onClick={() => onToggleFavorite(note.id)} title="Favorite"><IconStar width={13} height={13} /></button>
-                    <button className="iconBtn" onClick={() => onRenameNote(note)} title="Rename" aria-label="Rename"><IconEdit width={13} height={13} /></button>
-                    <button className="iconBtn" onClick={() => onMoveNote(note)} title="Move" aria-label="Move"><IconMove width={13} height={13} /></button>
-                  </div>
+                <div key={folderName}>
+                  <button
+                    className={selectedFolder === folderName ? "treeRow active folderRow" : "treeRow folderRow"}
+                    onClick={() => setSelectedFolder(folderName)}
+                    style={{ paddingLeft: "12px" }}
+                  >
+                    <span
+                      className={isCollapsed ? "caret collapsed" : "caret"}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setCollapsedFolders((curr) => {
+                          const next = { ...curr };
+                          if (next[folderName]) delete next[folderName];
+                          else next[folderName] = true;
+                          return next;
+                        });
+                      }}
+                    >
+                      ▾
+                    </span>
+                    <span>{folderName}</span>
+                  </button>
+                  {folderNotes.map((note) => renderNoteRow(note, 26))}
                 </div>
               );
             })}
+
+            {(notesByFolder.get("") ?? []).map((note) => renderNoteRow(note, 12))}
+
+            {creatingFolder && (
+              <div className="treeRow folderInlineInput" style={{ paddingLeft: "12px" }}>
+                <input
+                  autoFocus
+                  value={pendingFolderName}
+                  onChange={(e) => setPendingFolderName(e.target.value)}
+                  onBlur={commitCreateFolder}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitCreateFolder();
+                    if (e.key === "Escape") { setCreatingFolder(false); setPendingFolderName(""); }
+                  }}
+                  placeholder="New folder"
+                />
+              </div>
+            )}
           </section>
         </>
       )}

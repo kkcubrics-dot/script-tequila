@@ -1,26 +1,34 @@
-export type Project = {
-  id: string;
-  name: string;
-  description: string;
-  logline: string;
-  genre: string;
-  tone: string;
-  targetLength: string;
-  createdAt: string;
-};
-
 export type Note = {
   id: string;
-  projectId: string;
+  folderId: string | null;
+  folder: string;
   title: string;
   content: string;
   structuredSections: StructuredSections;
+  createdAt: string;
   updatedAt: string;
+};
+
+export type Folder = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NoteVersion = {
+  id: string;
+  noteId: string;
+  versionNo: number;
+  title: string;
+  content: string;
+  structuredSections: StructuredSections;
+  editor: string;
+  createdAt: string;
 };
 
 export type ChatMessage = {
   id: string;
-  projectId: string | null;
   noteId: string | null;
   sessionId: string | null;
   source: "human" | "model" | "agent" | "system";
@@ -48,8 +56,9 @@ export type AppSettings = {
 };
 
 export type AppState = {
-  projects: Project[];
+  folders: Folder[];
   notes: Note[];
+  noteVersions: NoteVersion[];
   messages: ChatMessage[];
   settings: AppSettings;
 };

@@ -9,7 +9,6 @@ export async function POST(request: NextRequest) {
     await requireAuthedUser();
 
     const body = (await request.json()) as {
-      projectId?: string | null;
       noteId?: string | null;
       message?: string;
       includeNote?: boolean;
@@ -18,15 +17,11 @@ export async function POST(request: NextRequest) {
 
     const message = body.message?.trim() ?? "";
     if (!message) return fail("VALIDATION_ERROR", "Message is required.", 400);
-    if (body.projectId !== null && body.projectId !== undefined && typeof body.projectId !== "string") {
-      return fail("VALIDATION_ERROR", "projectId must be a string or null.", 400);
-    }
     if (body.noteId !== null && body.noteId !== undefined && typeof body.noteId !== "string") {
       return fail("VALIDATION_ERROR", "noteId must be a string or null.", 400);
     }
 
     const result = await sendChat({
-      projectId: body.projectId ?? null,
       noteId: body.noteId ?? null,
       message,
       includeNote: Boolean(body.includeNote),

@@ -72,7 +72,7 @@
 ### 2.3 关键 API 约定（建议）
 
 - `POST /api/chat`
-  - 输入：`projectId`, `noteId`, `message`, `includeNote`, `sessionId`
+  - 输入：`noteId`, `message`, `includeNote`, `sessionId`
   - 输出：`{ userMessage, assistantMessage, structuredPatch? }`
 
 - `POST /api/notes/:id/structure`
@@ -87,7 +87,7 @@
 
 ### 2.4 数据模型演进
 
-- `Project`: 保留 brief 字段（logline/genre/tone/targetLength）
+- `Folder`: 顶层分组字段（仅一层）
 - `Note`: 新增 `structuredSections`（JSON）与 `updatedAt`
 - `Message`: 增加 `sessionId`、`source`（human/model/agent）
 - `Session`: 新实体，管理多轮会话元数据
@@ -105,7 +105,7 @@
   - `Local Cache`（端侧）：用于离线浏览和草稿暂存。
   - `Sync Store`（服务端）：作为唯一真相源，统一项目/笔记/会话状态。
 - 数据同步单位：
-  - `Project`
+  - `Folder`
   - `Note`（含 `structuredSections`）
   - `Session`
   - `Message`
@@ -261,21 +261,21 @@
 
 - [ ] 3. 重构前端主流程
   - 拆 `workspace.tsx` 为：
-    - `SidebarProjectTree`
+    - `SidebarFolderTree`
     - `WorkspaceEditor`
     - `ChatPanel`
     - `ModeSwitcher`
   - [x] 请求逻辑抽到 `lib/api-client.ts`，页面只管状态渲染。
   - 必要前端主流程（MVP）：
     - `Auth Gate`：未登录跳 `/login`，已登录进入工作台。
-    - `Project/Note 导航`：项目切换、note 选择、新建、搜索、最近历史。
+    - `Folder/Note 导航`：文件夹切换、note 选择、新建、搜索、最近历史。
     - `人类编辑主流程`：编辑标题/正文、保存状态（saved/dirty/saving/error）、失败可重试。
     - `AI 对话主流程`：会话列表、新建/切换会话、消息流、发送消息、回复插入/替换 note。
     - `模式切换主流程`：`focus-write` / `split` / `focus-chat`，切换不丢上下文。
     - `基础系统流程`：状态栏、统一错误提示、登出。
   - 容器与组件职责：
     - `Workspace`：只负责顶层状态与编排。
-    - `SidebarProjectTree`：项目与笔记导航。
+    - `SidebarFolderTree`：文件夹与笔记导航。
     - `WorkspaceEditor`：写作编辑区与保存状态。
     - `ChatPanel`：会话管理与对话执行。
     - `ModeSwitcher`：视图模式切换与状态展示。

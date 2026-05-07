@@ -4,11 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import OpenAI from "openai";
 
-import { AppSettings, ChatMessage, Note, Project } from "@/lib/types";
+import { AppSettings, ChatMessage, Note } from "@/lib/types";
 
 type ChatRequestInput = {
   settings: AppSettings;
-  project: Project | null;
   note: Note | null;
   history: ChatMessage[];
   message: string;
@@ -92,7 +91,7 @@ export const __test__ = {
 };
 
 export async function generateAssistantReply(input: ChatRequestInput) {
-  const { settings, project, note, history, message, includeNote } = input;
+  const { settings, note, history, message, includeNote } = input;
   const rawBaseUrl = resolveBaseUrl(settings.baseUrl);
   const shouldUseDeepSeekDefault =
     rawBaseUrl.includes("api.openai.com") &&
@@ -113,18 +112,7 @@ export async function generateAssistantReply(input: ChatRequestInput) {
 
   const promptParts = [
     settings.systemPrompt.trim(),
-    project
-      ? [
-          `Project: ${project.name}`,
-          project.description ? `Description: ${project.description}` : "",
-          project.logline ? `Logline: ${project.logline}` : "",
-          project.genre ? `Genre: ${project.genre}` : "",
-          project.tone ? `Tone: ${project.tone}` : "",
-          project.targetLength ? `Target length: ${project.targetLength}` : ""
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : "",
+    "",
     includeNote && note ? `Current note: ${note.title}\n${note.content}` : ""
   ].filter(Boolean);
 

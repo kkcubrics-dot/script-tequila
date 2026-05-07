@@ -8,20 +8,20 @@ export async function getWorkspaceState() {
   return workspaceRepository.readState();
 }
 
-export async function saveProject(input: {
-  id?: string;
-  name: string;
-  description?: string;
-  logline?: string;
-  genre?: string;
-  tone?: string;
-  targetLength?: string;
-}) {
-  return workspaceRepository.upsertProject(input);
+export async function saveNote(input: { id?: string; folderId?: string | null; folder: string; title: string; content: string; createdAt?: string }) {
+  return workspaceRepository.upsertNote(input);
 }
 
-export async function saveNote(input: { id?: string; projectId: string; title: string; content: string }) {
-  return workspaceRepository.upsertNote(input);
+export async function saveFolder(input: { id?: string; name: string }) {
+  return workspaceRepository.upsertFolder(input);
+}
+
+export async function getNoteVersions(noteId: string) {
+  return workspaceRepository.listNoteVersions(noteId);
+}
+
+export async function rollbackNoteVersion(noteId: string, versionId: string) {
+  return workspaceRepository.restoreNoteVersion(noteId, versionId);
 }
 
 export async function saveAppSettings(settings: AppSettings) {
@@ -66,26 +66,22 @@ export async function patchNoteSections(noteId: string, mode: "append" | "replac
 }
 
 export async function sendChat(input: {
-  projectId?: string | null;
   noteId?: string | null;
   message: string;
   includeNote: boolean;
   sessionId?: string | null;
 }) {
   const state = await workspaceRepository.readState();
-  const projectId = input.projectId ?? null;
   const noteId = input.noteId ?? null;
   const sessionId = input.sessionId ?? randomUUID();
 
-  const project = state.projects.find((item) => item.id === projectId) ?? null;
   const note = state.notes.find((item) => item.id === noteId) ?? null;
   const history = state.messages.filter(
-    (item) => item.projectId === projectId && item.noteId === noteId && (item.sessionId ?? null) === sessionId
+    (item) => item.noteId === noteId && (item.sessionId ?? null) === sessionId
   );
 
   const userMessage: ChatMessage = {
     id: randomUUID(),
-    projectId,
     noteId,
     sessionId,
     source: "human",
@@ -96,7 +92,6 @@ export async function sendChat(input: {
 
   const reply = await generateAssistantReply({
     settings: state.settings,
-    project,
     note,
     history,
     message: input.message,
@@ -105,7 +100,6 @@ export async function sendChat(input: {
 
   const assistantMessage: ChatMessage = {
     id: reply.id ?? randomUUID(),
-    projectId,
     noteId,
     sessionId,
     source: "model",
