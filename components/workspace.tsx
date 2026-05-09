@@ -8,6 +8,8 @@ import { TopBar } from "@/components/workspace/top-bar";
 import { SidebarPane } from "@/components/workspace/sidebar-pane";
 import { NotePane } from "@/components/workspace/note-pane";
 import { ChatPane } from "@/components/workspace/chat-pane";
+import { NoteActionDialog, NoteActionMode } from "@/components/workspace/note-action-dialog";
+import { SettingsDialog } from "@/components/workspace/settings-dialog";
 
 type WorkspaceProps = { initialState: AppState };
 
@@ -28,6 +30,13 @@ export function Workspace({ initialState }: WorkspaceProps) {
   const [selectionContext, setSelectionContext] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [showRightDrawer, setShowRightDrawer] = useState(true);
+  const [isCompact, setIsCompact] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [noteDialogMode, setNoteDialogMode] = useState<NoteActionMode>("create");
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [noteDialogValue, setNoteDialogValue] = useState("");
+  const [noteDialogTargetId, setNoteDialogTargetId] = useState<string | null>(null);
+  const [noteDialogTargetFolder, setNoteDialogTargetFolder] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const folders = useMemo(() => {
@@ -85,7 +94,11 @@ export function Workspace({ initialState }: WorkspaceProps) {
   const filteredNotes = useMemo(
     () =>
       notes
-        .filter((note) => (selectedFolder ? note.folder.trim() === selectedFolder : true))
+        .filter((note) => {
+          if (!selectedFolder) return true;
+          const folder = note.folder.trim();
+          return folder === selectedFolder || folder.startsWith(`${selectedFolder}/`);
+        })
         .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)),
     [notes, selectedFolder]
   );
@@ -114,6 +127,19 @@ export function Workspace({ initialState }: WorkspaceProps) {
   useEffect(() => { if (!activeNote && filteredNotes[0]) setActiveNoteId(filteredNotes[0].id); }, [activeNote, filteredNotes]);
   useEffect(() => { if (!activeSessionId && sessions[0]) setActiveSessionId(sessions[0].id); }, [activeSessionId, sessions]);
   useEffect(() => { setShowRightDrawer(layoutPreset === "write-assist" || layoutPreset === "chat-reference"); }, [layoutPreset]);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 960px)");
+    function syncCompactState(nextCompact: boolean) {
+      setIsCompact(nextCompact);
+      setSidebarOpen((current) => (nextCompact ? current : false));
+    }
+    syncCompactState(media.matches);
+    function handleChange(event: MediaQueryListEvent) {
+      syncCompactState(event.matches);
+    }
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
+  }, []);
 
   async function handleCreateFolder(name: string) {
     const uniqueName = getUniqueFolderName(name);
@@ -132,13 +158,13 @@ export function Workspace({ initialState }: WorkspaceProps) {
     }
   }
 
-  async function handleCreateNote() {
+  async function createNoteWithTitle(title: string, folderPath?: string) {
     try {
-      const title = window.prompt("Note title", "Untitled Note"); if (!title?.trim()) return;
-      const folder = foldersState.find((item) => item.name === selectedFolder.trim()) ?? null;
+      const targetFolderPath = (folderPath ?? selectedFolder).trim();
+      const folder = foldersState.find((item) => item.name === targetFolderPath) ?? null;
       const note = await postApi<Note>("/api/notes", {
         folderId: folder?.id ?? null,
-        folder: selectedFolder.trim(),
+        folder: targetFolderPath,
         title: title.trim(),
         content: ""
       });
@@ -158,15 +184,57 @@ export function Workspace({ initialState }: WorkspaceProps) {
     });
   }
 
-  async function handleRenameNote(note: Note) { const t = window.prompt("Rename note", note.title); if (!t?.trim() || t.trim() === note.title) return; const saved = await postApi<Note>("/api/notes", { ...note, title: t.trim() }); setNotes((c) => c.map((n) => (n.id === saved.id ? saved : n))); setStatus("Note renamed"); }
-  async function handleMoveNote(note: Note) {
-    const target = window.prompt("Move to folder", note.folder || "Drafts");
-    if (target === null) return;
+  async function renameNoteWithTitle(noteId: string, title: string) {
+    const note = notes.find((item) => item.id === noteId);
+    if (!note || !title.trim() || title.trim() === note.title) return;
+    const saved = await postApi<Note>("/api/notes", { ...note, title: title.trim() });
+    setNotes((c) => c.map((n) => (n.id === saved.id ? saved : n)));
+    setStatus("Note renamed");
+  }
+
+  async function moveNoteToFolder(noteId: string, target: string) {
+    const note = notes.find((item) => item.id === noteId);
+    if (!note) return;
     const normalizedTarget = target.trim();
     const folder = foldersState.find((item) => item.name === normalizedTarget) ?? null;
     const saved = await postApi<Note>("/api/notes", { ...note, folderId: folder?.id ?? null, folder: normalizedTarget });
     setNotes((c) => c.map((n) => (n.id === saved.id ? saved : n)));
     setStatus("Note moved");
+  }
+
+  function openCreateNoteDialog(folderPath?: string) {
+    setNoteDialogMode("create");
+    setNoteDialogTargetId(null);
+    setNoteDialogTargetFolder((folderPath ?? selectedFolder).trim());
+    setNoteDialogValue("Untitled Note");
+    setNoteDialogOpen(true);
+  }
+
+  function openRenameNoteDialog(note: Note) {
+    setNoteDialogMode("rename");
+    setNoteDialogTargetId(note.id);
+    setNoteDialogValue(note.title);
+    setNoteDialogOpen(true);
+  }
+
+  function openMoveNoteDialog(note: Note) {
+    setNoteDialogMode("move");
+    setNoteDialogTargetId(note.id);
+    setNoteDialogValue(note.folder || "Drafts");
+    setNoteDialogOpen(true);
+  }
+
+  async function handleNoteDialogSubmit(value: string) {
+    if (noteDialogMode === "create") {
+      await createNoteWithTitle(value, noteDialogTargetFolder);
+      return;
+    }
+    if (!noteDialogTargetId) return;
+    if (noteDialogMode === "rename") {
+      await renameNoteWithTitle(noteDialogTargetId, value);
+      return;
+    }
+    await moveNoteToFolder(noteDialogTargetId, value);
   }
 
   async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
@@ -202,29 +270,56 @@ export function Workspace({ initialState }: WorkspaceProps) {
 
   const workspaceClass = `workspace workspace-${layoutPreset}`;
   const isChatLayout = layoutPreset === "chat" || layoutPreset === "chat-reference";
+  const sidebarShellClass = isCompact ? `sidebarShell ${sidebarOpen ? "open" : ""}` : "sidebarShell";
 
   return (
     <main className={workspaceClass}>
-      <TopBar status={status} layoutPreset={layoutPreset} onPresetChange={setLayoutPreset} onToggleSettings={() => setShowSettings((v) => !v)} />
-
-      <SidebarPane
-        isChatLayout={isChatLayout}
-        selectedFolder={selectedFolder}
-        setSelectedFolder={setSelectedFolder}
-        notes={notes}
-        folders={folders}
-        activeNoteId={activeNote?.id}
-        favorites={favorites}
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        setActiveSessionId={setActiveSessionId}
-        onCreateFolder={handleCreateFolder}
-        onCreateNote={handleCreateNote}
-        onToggleFavorite={handleToggleFavorite}
-        onRenameNote={handleRenameNote}
-        onMoveNote={handleMoveNote}
-        onSelectNote={setActiveNoteId}
+      <TopBar
+        status={status}
+        layoutPreset={layoutPreset}
+        isCompact={isCompact}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        onPresetChange={setLayoutPreset}
+        onToggleSettings={() => setShowSettings((v) => !v)}
       />
+
+      <div className={sidebarShellClass}>
+        <SidebarPane
+          isChatLayout={isChatLayout}
+          selectedFolder={selectedFolder}
+          setSelectedFolder={(value) => {
+            setSelectedFolder(value);
+            if (isCompact) setSidebarOpen(false);
+          }}
+          notes={notes}
+          folders={folders}
+          activeNoteId={activeNote?.id}
+          favorites={favorites}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          setActiveSessionId={(value) => {
+            setActiveSessionId(value);
+            if (isCompact) setSidebarOpen(false);
+          }}
+          onCreateFolder={handleCreateFolder}
+          onCreateNote={(folderPath) => {
+            openCreateNoteDialog(folderPath);
+            if (isCompact) setSidebarOpen(false);
+          }}
+          onToggleFavorite={handleToggleFavorite}
+          onRenameNote={openRenameNoteDialog}
+          onMoveNote={openMoveNoteDialog}
+          onSelectNote={(value) => {
+            setActiveNoteId(value);
+            if (isCompact) setSidebarOpen(false);
+          }}
+          onCreateSession={() => {
+            createSession();
+            if (isCompact) setSidebarOpen(false);
+          }}
+        />
+      </div>
+      {isCompact && sidebarOpen && <button className="sidebarScrim" type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />}
 
       <NotePane
         isChatLayout={isChatLayout}
@@ -261,16 +356,31 @@ export function Workspace({ initialState }: WorkspaceProps) {
         onInsert={insertAssistantReply}
       />
 
-      {showSettings && (
-        <form className="settingsFloat card" onSubmit={handleSaveSettings}>
-          <label className="controlLabel">API Key<input type="password" value={settings.apiKey} onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })} /></label>
-          <label className="controlLabel">Model<select value={settings.model} onChange={(e) => setSettings({ ...settings, model: e.target.value })}><option value="deepseek-v4-flash">deepseek-v4-flash</option><option value="deepseek-v4-pro">deepseek-v4-pro</option><option value="gpt-4o-mini">gpt-4o-mini</option><option value="gpt-4.1-mini">gpt-4.1-mini</option><option value="gpt-4.1">gpt-4.1</option></select></label>
-          <label className="controlLabel">Base URL<input value={settings.baseUrl} onChange={(e) => setSettings({ ...settings, baseUrl: e.target.value })} /></label>
-          <div className="headActions"><button className="ghost" type="button" onClick={() => setShowSettings(false)}>Close</button><button type="submit" disabled={isPending}>Save</button></div>
-        </form>
-      )}
-
       {!showRightDrawer && <button className="drawerToggle ghost" onClick={() => setShowRightDrawer(true)}>Open side panel</button>}
+      <SettingsDialog
+        open={showSettings}
+        settings={settings}
+        isPending={isPending}
+        onOpenChange={setShowSettings}
+        onChange={setSettings}
+        onSubmit={handleSaveSettings}
+      />
+      <NoteActionDialog
+        open={noteDialogOpen}
+        mode={noteDialogMode}
+        initialValue={noteDialogValue}
+        title={noteDialogMode === "create" ? "Create note" : noteDialogMode === "rename" ? "Rename note" : "Move note"}
+        description={
+          noteDialogMode === "create"
+            ? "Create a new note in the current folder."
+            : noteDialogMode === "rename"
+              ? "Update the title for this note."
+              : "Move this note into another folder path."
+        }
+        confirmLabel={noteDialogMode === "create" ? "Create" : noteDialogMode === "rename" ? "Rename" : "Move"}
+        onSubmit={handleNoteDialogSubmit}
+        onOpenChange={setNoteDialogOpen}
+      />
     </main>
   );
 }

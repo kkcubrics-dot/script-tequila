@@ -58,3 +58,18 @@ export function IconMove({ ...props }: IconProps) {
 export function IconStar({ ...props }: IconProps) {
   return <BaseIcon {...props}><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z" /></BaseIcon>;
 }
+export function IconChevronDown({ ...props }: IconProps) {
+  return <BaseIcon {...props}><path d="m6 9 6 6 6-6" /></BaseIcon>;
+}
+export function IconAttachment({ ...props }: IconProps) {
+  return <BaseIcon {...props}><path d="m21 12.5-8.7 8.7a4.5 4.5 0 0 1-6.4-6.4l9.4-9.4a3 3 0 1 1 4.2 4.2l-9.4 9.4a1.5 1.5 0 0 1-2.1-2.1l8-8" /></BaseIcon>;
+}
+export function IconMic({ ...props }: IconProps) {
+  return <BaseIcon {...props}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" /></BaseIcon>;
+}
+export function IconSpark({ ...props }: IconProps) {
+  return <BaseIcon {...props}><path d="m12 3 1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6Z" /><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9Z" /></BaseIcon>;
+}
+export function IconCompass({ ...props }: IconProps) {
+  return <BaseIcon {...props}><circle cx="12" cy="12" r="8" /><path d="m14.5 9.5-3.8 1.8-1.8 3.8 3.8-1.8Z" /></BaseIcon>;
+}

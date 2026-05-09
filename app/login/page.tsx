@@ -32,10 +32,32 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="workspace" style={{ gridTemplateColumns: "minmax(0, 1fr)", maxWidth: 560, margin: "0 auto" }}>
-      <section className="card">
-        <h2>{mode === "login" ? "Login" : "Create Account"}</h2>
-        <form className="settings" onSubmit={submit}>
+    <main className="authShell">
+      <section className="authIntro">
+        <p className="label">Script Tequila</p>
+        <h1>Bring calm structure to writing and AI direction.</h1>
+        <p className="authLead">A focused desk for shaping notes, carrying context forward, and keeping every revision in motion.</p>
+        <div className="authFeatureList">
+          <div className="authFeature">
+            <strong>Quiet workspace</strong>
+            <span>Drafts, context, and revisions stay aligned.</span>
+          </div>
+          <div className="authFeature">
+            <strong>Fast iteration</strong>
+            <span>Push a note into chat, refine it, and bring the result back.</span>
+          </div>
+        </div>
+      </section>
+      <section className="authPanel card">
+        <div className="authTabs" role="tablist" aria-label="Authentication mode">
+          <button className={mode === "login" ? "authTab active" : "authTab"} type="button" onClick={() => setMode("login")}>Login</button>
+          <button className={mode === "signup" ? "authTab active" : "authTab"} type="button" onClick={() => setMode("signup")}>Create account</button>
+        </div>
+        <div className="authHeading">
+          <h2>{mode === "login" ? "Welcome back." : "Create your workspace."}</h2>
+          <p>{mode === "login" ? "Sign in to continue your active desk." : "Set up an account to start writing and iterating."}</p>
+        </div>
+        <form className="authForm" onSubmit={submit}>
           <label className="controlLabel">
             Email
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -44,12 +66,14 @@ export default function LoginPage() {
             Password
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </label>
-          <button type="submit">{mode === "login" ? "Login" : "Sign up"}</button>
+          <button className="primaryAction authSubmit" type="submit">{mode === "login" ? "Login" : "Sign up"}</button>
         </form>
-        <button className="ghost" onClick={() => setMode(mode === "login" ? "signup" : "login")}> 
-          {mode === "login" ? "Need an account? Sign up" : "Have an account? Login"}
-        </button>
-        <p>{status}</p>
+        <div className="authFoot">
+          <button className="ghost authSwitch" type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
+            {mode === "login" ? "Need an account? Sign up" : "Have an account? Login"}
+          </button>
+          <p className="authStatus">{status}</p>
+        </div>
       </section>
     </main>
   );
